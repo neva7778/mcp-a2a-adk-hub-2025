@@ -1,0 +1,2479 @@
+﻿What is A2A?¶
+The Agent2Agent (A2A) Protocol is an open standard designed to solve a fundamental challenge in the rapidly evolving landscape of artificial intelligence: how do AI agents, built by different teams, using different technologies, and owned by different organizations, communicate and collaborate effectively?
+
+
+As AI agents become more specialized and capable, the need for them to work together on complex tasks increases. Imagine a user asking their primary AI assistant to plan an international trip. This single request might involve coordinating the capabilities of several specialized agents:
+
+
+An agent for flight bookings.
+Another agent for hotel reservations.
+A third for local tour recommendations and bookings.
+A fourth to handle currency conversion and travel advisories.
+Without a common communication protocol, integrating these diverse agents into a cohesive user experience is a significant engineering hurdle. Each integration would likely be a custom, point-to-point solution, making the system difficult to scale, maintain, and extend.
+
+
+The A2A Solution¶
+A2A provides a standardized way for these independent, often "opaque" (black-box) agentic systems to interact. It defines:
+
+
+A common transport and format: JSON-RPC 2.0 over HTTP(S) for how messages are structured and transmitted.
+Discovery mechanisms (Agent Cards): How agents can advertise their capabilities and be found by other agents.
+Task management workflows: How collaborative tasks are initiated, progressed, and completed. This includes support for tasks that may be long-running or require multiple turns of interaction.
+Support for various data modalities: How agents exchange not just text, but also files, structured data (like forms), and potentially other rich media.
+Core principles for security and asynchronicity: Guidelines for secure communication and handling tasks that might take significant time or involve human-in-the-loop processes.
+Key Design Principles of A2A¶
+The development of A2A is guided by several core principles:
+
+
+Simplicity: Leverage existing, well-understood standards like HTTP, JSON-RPC, and Server-Sent Events (SSE) where possible, rather than reinventing the wheel.
+Enterprise Readiness: Address critical enterprise needs such as authentication, authorization, security, privacy, tracing, and monitoring from the outset by aligning with standard web practices.
+Asynchronous First: Natively support long-running tasks and scenarios where agents or users might not be continuously connected, through mechanisms like streaming and push notifications.
+Modality Agnostic: Allow agents to communicate using a variety of content types, enabling rich and flexible interactions beyond plain text.
+Opaque Execution: Enable collaboration without requiring agents to expose their internal logic, memory, or proprietary tools. Agents interact based on declared capabilities and exchanged context, preserving intellectual property and enhancing security.
+Benefits of Using A2A¶
+Adopting A2A can lead to significant advantages:
+
+
+Increased Interoperability: Break down silos between different AI agent ecosystems, allowing agents from various vendors and frameworks to work together.
+Enhanced Agent Capabilities: Allow developers to create more sophisticated applications by composing the strengths of multiple specialized agents.
+Reduced Integration Complexity: Standardize the "how" of agent communication, allowing teams to focus on the "what" – the value their agents provide.
+Fostering Innovation: Encourage the development of a richer ecosystem of specialized agents that can readily plug into larger collaborative workflows.
+Future-Proofing: Provide a flexible framework that can adapt as agent technologies continue to evolve.
+By establishing common ground for agent-to-agent communication, A2A aims to accelerate the adoption and utility of AI agents across diverse industries and applications, paving the way for more powerful and collaborative AI systems.
+
+
+Key Concepts in A2A¶
+The Agent2Agent (A2A) protocol is built around a set of core concepts that define how agents interact. Understanding these concepts is crucial for developing or integrating with A2A-compliant systems.
+
+
+A2A Actors showing a User, A2A Client (Client Agent), and A2A Server (Remote Agent)
+
+
+Core Actors¶
+User: The end-user (human or automated service) who initiates a request or goal that requires agent assistance.
+A2A Client (Client Agent): An application, service, or another AI agent that acts on behalf of the user to request actions or information from a remote agent. The client initiates communication using the A2A protocol.
+A2A Server (Remote Agent): An AI agent or agentic system that exposes an HTTP endpoint implementing the A2A protocol. It receives requests from clients, processes tasks, and returns results or status updates. The remote agent operates as an "opaque" system from the client's perspective, meaning the client doesn't need to know its internal workings, memory, or tools.
+Fundamental Communication Elements¶
+Agent Card:
+
+
+A JSON metadata document, typically discoverable at a well-known URL (e.g., /.well-known/agent.json), that describes an A2A Server.
+It details the agent's identity (name, description), service endpoint URL, version, supported A2A capabilities (like streaming or push notifications), specific skills it offers, default input/output modalities, and authentication requirements.
+Clients use the Agent Card to discover agents and understand how to interact with them securely and effectively.
+See details in the Protocol Specification: Agent Card.
+Task:
+
+
+The central unit of work in A2A. A client initiates a task to achieve a specific goal (e.g., "generate a report," "book a flight," "answer a question").
+Each task has a unique ID (typically client-generated) and progresses through a defined lifecycle (e.g., submitted, working, input-required, completed, failed).
+Tasks are stateful and can involve multiple exchanges (messages) between the client and the server.
+See details in the Protocol Specification: Task Object.
+Message:
+
+
+Represents a single turn or unit of communication within a Task.
+Messages have a role (either "user" for client-sent messages or "agent" for server-sent messages) and contain one or more Part objects that carry the actual content.
+Used for conveying instructions, context, questions, answers, or status updates that are not necessarily formal Artifacts.
+See details in the Protocol Specification: Message Object.
+Part:
+
+
+The fundamental unit of content within a Message or an Artifact. Each part has a specific type and can carry different kinds of data:
+TextPart: Contains plain textual content.
+FilePart: Represents a file, which can be transmitted as inline base64-encoded bytes or referenced via a URI. Includes metadata like filename and MIME type.
+DataPart: Carries structured JSON data, useful for forms, parameters, or any machine-readable information.
+See details in the Protocol Specification: Part Union Type.
+Artifact:
+
+
+Represents a tangible output or result generated by the remote agent during the processing of a task.
+Examples include generated documents, images, spreadsheets, structured data results, or any other self-contained piece of information that is a direct result of the task.
+Artifacts are composed of one or more Part objects and can be streamed incrementally.
+See details in the Protocol Specification: Artifact Object.
+Interaction Mechanisms¶
+Request/Response (Polling):
+
+
+The client sends a request (e.g., using the tasks/send RPC method) and receives a response from the server.
+For long-running tasks, the server might initially respond with a working status. The client would then periodically call tasks/get to poll for updates until the task reaches a terminal state (e.g., completed, failed).
+Streaming (Server-Sent Events - SSE):
+
+
+For tasks that produce results incrementally or provide real-time progress updates.
+The client initiates a task using tasks/sendSubscribe.
+The server responds with an HTTP connection that remains open, over which it sends a stream of Server-Sent Events (SSE).
+These events can be TaskStatusUpdateEvent (for status changes) or TaskArtifactUpdateEvent (for new or updated artifact chunks).
+This requires the server to advertise the streaming capability in its Agent Card.
+Learn more about Streaming & Asynchronous Operations.
+Push Notifications:
+
+
+For very long-running tasks or scenarios where maintaining a persistent connection (like SSE) is impractical.
+The client can provide a webhook URL when initiating a task (or by calling tasks/pushNotification/set).
+When the task status changes significantly (e.g., completes, fails, or requires input), the server can send an asynchronous notification (an HTTP POST request) to this client-provided webhook.
+This requires the server to advertise the pushNotifications capability in its Agent Card.
+Learn more about Streaming & Asynchronous Operations.
+Other Important Concepts¶
+Session (sessionId): An optional client-generated identifier that can be used to logically group multiple related Task objects, providing context across a series of interactions.
+Transport and Format: A2A communication occurs over HTTP(S). JSON-RPC 2.0 is used as the payload format for all requests and responses.
+Authentication & Authorization: A2A relies on standard web security practices. Authentication requirements are declared in the Agent Card, and credentials (e.g., OAuth tokens, API keys) are typically passed via HTTP headers, separate from the A2A protocol messages themselves.
+Learn more about Enterprise-Ready Features.
+Agent Discovery: The process by which clients find Agent Cards to learn about available A2A Servers and their capabilities.
+Learn more about Agent Discovery.
+By understanding these core components and mechanisms, developers can effectively design, implement, and utilize A2A for building interoperable and collaborative AI agent systems.
+
+
+A2A and MCP: Complementary Protocols for Agentic Systems¶
+A2A ❤️ MCP¶
+In the landscape of AI agent development, two key types of protocols are emerging to facilitate interoperability: those for connecting agents to tools and resources, and those for enabling agent-to-agent collaboration. The Agent2Agent (A2A) Protocol and the Model Context Protocol (MCP) address these distinct but related needs.
+
+
+TL;DR; Agentic applications need both A2A and MCP. We recommend MCP for tools and A2A for agents.
+
+
+Why Different Protocols?¶
+The distinction arises from the nature of what an agent interacts with:
+
+
+Tools & Resources:
+
+
+These are typically primitives with well-defined, structured inputs and outputs. They perform specific, often stateless, functions (e.g., a calculator, a database query API, a weather lookup service).
+Their behavior is generally predictable and transactional.
+Interaction is often a single request-response cycle.
+Agents:
+
+
+These are more autonomous systems. They can reason, plan, use multiple tools, maintain state over longer interactions, and engage in complex, often multi-turn dialogues to achieve novel or evolving tasks.
+Their behavior can be emergent and less predictable than a simple tool.
+Interaction often involves ongoing tasks, context sharing, and negotiation.
+Agentic applications need to leverage both: agents use tools to gather information and perform actions, and agents collaborate with other agents to tackle broader, more complex goals.
+
+
+Model Context Protocol (MCP)¶
+Focus: MCP standardizes how AI models and agents connect to and interact with tools, APIs, data sources, and other external resources.
+Mechanism: It defines a structured way to describe tool capabilities (akin to function calling in Large Language Models), pass inputs to them, and receive structured outputs.
+Use Cases:
+Enabling an LLM to call an external API (e.g., fetch current stock prices).
+Allowing an agent to query a database with specific parameters.
+Connecting an agent to a set of predefined functions or services.
+Ecosystem: MCP aims to create an ecosystem where tool providers can easily expose their services to various AI models and agent frameworks, and agent developers can easily consume these tools in a standardized way.
+Agent2Agent Protocol (A2A)¶
+Focus: A2A standardizes how independent, often opaque, AI agents communicate and collaborate with each other as peers.
+Mechanism: It provides an application-level protocol for agents to:
+Discover each other's high-level skills and capabilities (via Agent Cards).
+Negotiate interaction modalities (text, files, structured data).
+Manage shared, stateful, and potentially long-running tasks.
+Exchange conversational context, instructions, and complex, multi-part results.
+Use Cases:
+A customer service agent delegating a complex billing inquiry to a specialized billing agent, maintaining context of the customer interaction.
+A travel planning agent coordinating with separate flight, hotel, and activity booking agents, managing a multi-stage booking process.
+Agents exchanging information and status updates for a collaborative project that evolves over time.
+Key Difference from Tool Interaction: A2A allows for more dynamic, stateful, and potentially multi-modal interactions than typically seen with simple tool calls. Agents using A2A communicate as agents (or on behalf of users) rather than just invoking a discrete function.
+How A2A and MCP Complement Each Other¶
+A2A and MCP are not mutually exclusive; they are highly complementary and address different layers of an agentic system's interaction needs.
+
+
+Diagram showing A2A and MCP working together. A User interacts with Agent A via A2A. Agent A interacts with Agent B via A2A. Agent B uses MCP to interact with Tool 1 and Tool 2.
+
+
+An agentic application might use A2A to communicate with other agents, while each agent internally uses MCP to interact with its specific tools and resources.
+
+
+Example Scenario: The Auto Repair Shop¶
+Consider an auto repair shop staffed by autonomous AI agent "mechanics" who use special-purpose tools (such as vehicle jacks, multimeters, and socket wrenches) to diagnose and repair problems. The workers often have to diagnose and repair problems they have not seen before. The repair process can involve extensive conversations with a customer, research, and working with part suppliers.
+
+
+Customer Interaction (User-to-Agent via A2A):
+
+
+A customer (or their primary assistant agent) uses A2A to communicate with the "Shop Manager" agent: "My car is making a rattling noise."
+The Shop Manager agent uses A2A for a multi-turn diagnostic conversation: "Can you send a video of the noise?", "I see some fluid leaking. How long has this been happening?"
+Internal Tool Usage (Agent-to-Tool via MCP):
+
+
+The Mechanic agent, assigned the task by the Shop Manager, needs to diagnose the issue. It uses MCP to interact with its specialized tools:
+MCP call to a "Vehicle Diagnostic Scanner" tool: scan_vehicle_for_error_codes(vehicle_id='XYZ123').
+MCP call to a "Repair Manual Database" tool: get_repair_procedure(error_code='P0300', vehicle_make='Toyota', vehicle_model='Camry').
+MCP call to a "Platform Lift" tool: raise_platform(height_meters=2).
+Supplier Interaction (Agent-to-Agent via A2A):
+
+
+The Mechanic agent determines a specific part is needed. It uses A2A to communicate with a "Parts Supplier" agent: "Do you have part #12345 in stock for a Toyota Camry 2018?"
+The Parts Supplier agent, also an A2A-compliant system, responds, potentially leading to an order.
+In this example:
+
+
+A2A facilitates the higher-level, conversational, and task-oriented interactions between the customer and the shop, and between the shop's agents and external supplier agents.
+MCP enables the mechanic agent to use its specific, structured tools to perform its diagnostic and repair functions.
+Representing A2A Agents as MCP Resources¶
+It's conceivable that an A2A Server (a remote agent) could also expose some of its skills as MCP-compatible resources, especially if those skills are well-defined and can be invoked in a more tool-like, stateless manner. In such a case, another agent might "discover" this A2A agent's specific skill via an MCP-style tool description (perhaps derived from its Agent Card).
+
+
+However, the primary strength of A2A lies in its support for more flexible, stateful, and collaborative interactions that go beyond typical tool invocation. A2A is about agents partnering on tasks, while MCP is more about agents using capabilities.
+
+
+By leveraging both A2A for inter-agent collaboration and MCP for tool integration, developers can build more powerful, flexible, and interoperable AI systems.
+
+
+Agent Discovery in A2A¶
+For AI agents to collaborate using the Agent2Agent (A2A) protocol, they first need to find each other and understand what capabilities the other agents offer. A2A standardizes the format of an agent's self-description through the Agent Card. However, the methods for discovering these Agent Cards can vary depending on the environment and requirements.
+
+
+The Role of the Agent Card¶
+The Agent Card is a JSON document that serves as a digital "business card" for an A2A Server (the remote agent). It is crucial for discovery and initiating interaction. Key information typically included in an Agent Card:
+
+
+Identity: name, description, provider information.
+Service Endpoint: The url where the A2A service can be reached.
+A2A Capabilities: Supported protocol features like streaming or pushNotifications.
+Authentication: Required authentication schemes (e.g., "Bearer", "OAuth2") to interact with the agent.
+Skills: A list of specific tasks or functions the agent can perform (AgentSkill objects), including their id, name, description, inputModes, outputModes, and examples.
+Client agents parse the Agent Card to determine if a remote agent is suitable for a given task, how to structure requests for its skills, and how to communicate with it securely.
+
+
+Discovery Strategies¶
+Here are common strategies for how a client agent might discover the Agent Card of a remote agent:
+
+
+1. Well-Known URI¶
+This is a recommended approach for public agents or agents intended for broad discoverability within a specific domain.
+
+
+Mechanism: A2A Servers host their Agent Card at a standardized, "well-known" path on their domain.
+Standard Path: https://{agent-server-domain}/.well-known/agent.json (following the principles of RFC 8615 for well-known URIs).
+Process:
+A client agent knows or programmatically discovers the domain of a potential A2A Server (e.g., smart-thermostat.example.com).
+The client performs an HTTP GET request to https://smart-thermostat.example.com/.well-known/agent.json.
+If the Agent Card exists and is accessible, the server returns it as a JSON response.
+Advantages: Simple, standardized, and enables automated discovery by crawlers or systems that can resolve domains. Effectively reduces the discovery problem to "find the agent's domain."
+Considerations: Best suited for agents intended for open discovery or discovery within an organization that controls the domain. The endpoint serving the Agent Card may itself require authentication if the card contains sensitive information.
+2. Curated Registries (Catalog-Based Discovery)¶
+For enterprise environments, marketplaces, or specialized ecosystems, Agent Cards can be published to and discovered via a central registry or catalog.
+
+
+Mechanism: An intermediary service (the registry) maintains a collection of Agent Cards. Clients query this registry to find agents based on various criteria (e.g., skills offered, tags, provider name, desired capabilities).
+Process:
+A2A Servers (or their administrators) register their Agent Cards with the registry service. The mechanism for this registration is outside the scope of the A2A protocol itself.
+Client agents query the registry's API (e.g., "find agents with 'image-generation' skill that support streaming").
+The registry returns a list of matching Agent Cards or references to them.
+Advantages:
+Centralized management, curation, and governance of available agents.
+Facilitates discovery based on functional capabilities rather than just domain names.
+Can implement access controls, policies, and trust mechanisms at the registry level.
+Enables scenarios like company-specific or team-specific agent catalogs, or public marketplaces of A2A-compliant agents.
+Considerations: Requires an additional registry service. The A2A protocol does not currently define a standard API for such registries, though this is an area of potential future exploration and community standardization.
+3. Direct Configuration / Private Discovery¶
+In many scenarios, especially within tightly coupled systems, for private agents, or during development and testing, clients might be directly configured with Agent Card information or a URL to fetch it.
+
+
+Mechanism: The client application has hardcoded Agent Card details, reads them from a local configuration file, receives them through an environment variable, or fetches them from a private, proprietary API endpoint known to the client.
+Process: This is highly specific to the application's deployment and configuration strategy.
+Advantages: Simple and effective for known, static relationships between agents or when dynamic discovery is not a requirement.
+Considerations: Less flexible for discovering new or updated agents dynamically. Changes to the remote agent's card might require re-configuration of the client. Proprietary API-based discovery is not standardized by A2A.
+Securing Agent Cards¶
+Agent Cards themselves can sometimes contain information that should be protected, such as:
+
+
+The url of an internal-only or restricted-access agent.
+Details in the authentication.credentials field if it's used for scheme-specific, non-secret information (e.g., an OAuth token URL). Storing actual plaintext secrets in an Agent Card is strongly discouraged.
+Descriptions of sensitive or internal skills.
+Protection Mechanisms:
+
+
+Access Control on the Endpoint: The HTTP endpoint serving the Agent Card (whether it's the /.well-known/agent.json path, a registry API, or a custom URL) should be secured using standard web practices if the card is not intended for public, unauthenticated access.
+mTLS: Require mutual TLS for client authentication if appropriate for the trust model.
+Network Restrictions: Limit access to specific IP ranges, VPCs, or private networks.
+Authentication: Require standard HTTP authentication (e.g., OAuth 2.0 Bearer token, API Key) to access the Agent Card itself.
+Selective Disclosure by Registries: Agent registries can implement logic to return different Agent Cards or varying levels of detail based on the authenticated client's identity and permissions. For example, a public query might return a limited card, while an authenticated partner query might receive a card with more details.
+It's crucial to remember that if an Agent Card were to contain sensitive data (again, not recommended for secrets), the card itself must never be available without strong authentication and authorization. The A2A protocol encourages authentication schemes where the client obtains dynamic credentials out-of-band, rather than relying on static secrets embedded in the Agent Card.
+
+
+Future Considerations¶
+The A2A community may explore standardizing aspects of registry interactions or more advanced, semantic discovery protocols in the future. Feedback and contributions in this area are welcome to enhance the discoverability and interoperability of A2A agents.
+
+
+Enterprise-Ready Features for A2A Agents¶
+The Agent2Agent (A2A) protocol is designed with enterprise requirements at its core. Instead of inventing new, proprietary standards for security and operations, A2A aims to integrate seamlessly with existing enterprise infrastructure and widely adopted best practices. A2A treats remote agents as standard, HTTP-based enterprise applications. This approach allows organizations to leverage their existing investments and expertise in security, monitoring, governance, and identity management.
+
+
+A key principle of A2A is that agents are typically "opaque" – they do not share internal memory, tools, or direct resource access with each other. This opacity naturally aligns with standard client/server security paradigms.
+
+
+1. Transport Level Security (TLS)¶
+Ensuring the confidentiality and integrity of data in transit is fundamental.
+
+
+HTTPS Mandate: All A2A communication in production environments MUST occur over HTTPS.
+Modern TLS Standards: Implementations SHOULD use modern TLS versions (TLS 1.2 or higher is recommended) with strong, industry-standard cipher suites to protect data from eavesdropping and tampering.
+Server Identity Verification: A2A Clients SHOULD verify the A2A Server's identity by validating its TLS certificate against trusted certificate authorities (CAs) during the TLS handshake. This prevents man-in-the-middle attacks.
+2. Authentication¶
+A2A delegates authentication to standard web mechanisms, primarily relying on HTTP headers. Authentication requirements are advertised by the A2A Server in its Agent Card.
+
+
+No In-Payload Identity: A2A protocol payloads (JSON-RPC messages) do not carry user or client identity information. Identity is established at the transport/HTTP layer.
+Agent Card Declaration: The A2A Server's AgentCard specifies the required authentication schemes (e.g., "Bearer", "OAuth2", "ApiKey", "Basic") in its authentication object. These scheme names often align with those defined in the OpenAPI Specification for authentication.
+Out-of-Band Credential Acquisition: The A2A Client is responsible for obtaining the necessary credential materials (e.g., OAuth 2.0 tokens, API keys, JWTs) through processes external to the A2A protocol itself. This could involve OAuth flows (authorization code, client credentials), secure key distribution, etc.
+HTTP Header Transmission: Credentials MUST be transmitted in standard HTTP headers as per the requirements of the chosen authentication scheme (e.g., Authorization: Bearer <token>, X-API-Key: <key_value>).
+Server-Side Validation: The A2A Server MUST authenticate every incoming request based on the credentials provided in the HTTP headers and its declared requirements.
+If authentication fails or is missing, the server SHOULD respond with standard HTTP status codes such as 401 Unauthorized or 403 Forbidden.
+A 401 Unauthorized response SHOULD include a WWW-Authenticate header indicating the required scheme(s), guiding the client on how to authenticate correctly.
+In-Task Authentication (Secondary Credentials): If an agent, during a task, requires additional credentials for a different system (e.g., to access a specific tool on behalf of the user), A2A recommends:
+The A2A Server transitions the A2A task to the input-required state.
+The TaskStatus.message (often using a DataPart) should provide details about the required authentication for the secondary system, potentially using an AuthenticationInfo-like structure.
+The A2A Client then obtains these new credentials out-of-band for the secondary system. These credentials might be provided back to the A2A Server (if it's proxying the request) or used by the client to interact directly with the secondary system.
+3. Authorization¶
+Once a client is authenticated, the A2A Server is responsible for authorizing the request. Authorization logic is specific to the agent's implementation, the data it handles, and applicable enterprise policies.
+
+
+Granular Control: Authorization SHOULD be applied based on the authenticated identity (which could represent an end-user, a client application, or both).
+Skill-Based Authorization: Access can be controlled on a per-skill basis, as advertised in the Agent Card. For example, specific OAuth scopes might grant an authenticated client access to invoke certain skills but not others.
+Data and Action-Level Authorization: Agents that interact with backend systems, databases, or tools MUST enforce appropriate authorization before performing sensitive actions or accessing sensitive data through those underlying resources. The agent acts as a gatekeeper.
+Principle of Least Privilege: Grant only the necessary permissions required for a client or user to perform their intended operations via the A2A interface.
+4. Data Privacy and Confidentiality¶
+Sensitivity Awareness: Implementers must be acutely aware of the sensitivity of data exchanged in Message and Artifact parts of A2A interactions.
+Compliance: Ensure compliance with relevant data privacy regulations (e.g., GDPR, CCPA, HIPAA, depending on the domain and data).
+Data Minimization: Avoid including or requesting unnecessarily sensitive information in A2A exchanges.
+Secure Handling: Protect data both in transit (via TLS, as mandated) and at rest (if persisted by agents) according to enterprise data security policies and regulatory requirements.
+5. Tracing, Observability, and Monitoring¶
+A2A's reliance on HTTP allows for straightforward integration with standard enterprise tracing, logging, and monitoring tools.
+
+
+Distributed Tracing:
+A2A Clients and Servers SHOULD participate in distributed tracing systems (e.g., OpenTelemetry, Jaeger, Zipkin).
+Trace context (trace IDs, span IDs) SHOULD be propagated via standard HTTP headers (e.g., W3C Trace Context headers like traceparent and tracestate).
+This enables end-to-end visibility of requests as they flow across multiple agents and underlying services, which is invaluable for debugging and performance analysis.
+Comprehensive Logging: Implement detailed logging on both client and server sides. Logs should include relevant identifiers such as taskId, sessionId, correlation IDs, and trace context to facilitate troubleshooting and auditing.
+Metrics: A2A Servers should expose key operational metrics (e.g., request rates, error rates, task processing latency, resource utilization) to enable performance monitoring, alerting, and capacity planning. These can be integrated with systems like Prometheus or Google Cloud Monitoring.
+Auditing: Maintain audit trails for significant events, such as task creation, critical state changes, and actions performed by agents, especially those involving sensitive data access, modifications, or high-impact operations.
+6. API Management and Governance¶
+For A2A Servers exposed externally, across organizational boundaries, or even within large enterprises, integration with API Management solutions is highly recommended. This can provide:
+
+
+Centralized Policy Enforcement: Consistent application of security policies (authentication, authorization), rate limiting, and quotas.
+Traffic Management: Load balancing, routing, and mediation.
+Analytics and Reporting: Insights into agent usage, performance, and trends.
+Developer Portals: Facilitate discovery of A2A-enabled agents, provide documentation (including Agent Cards), and streamline onboarding for client developers.
+By adhering to these enterprise-grade practices, A2A implementations can be deployed securely, reliably, and manageably within complex organizational environments, fostering trust and enabling scalable inter-agent collaboration.
+
+
+Streaming & Asynchronous Operations in A2A¶
+The Agent2Agent (A2A) protocol is designed to handle tasks that may not complete immediately. Many AI-driven operations can be long-running, involve multiple steps, produce incremental results, or require human intervention. A2A provides robust mechanisms for managing such asynchronous interactions, ensuring that clients can receive updates effectively, whether they remain continuously connected or operate in a more disconnected fashion.
+
+
+1. Streaming with Server-Sent Events (SSE)¶
+For tasks that produce incremental results (like generating a long document or streaming media) or provide ongoing status updates, A2A supports real-time communication using Server-Sent Events (SSE). This is ideal when the client can maintain an active HTTP connection with the A2A Server.
+
+
+Key Characteristics:
+
+
+Initiation: The client uses the tasks/sendSubscribe RPC method to send an initial message (e.g., a prompt or command) and simultaneously subscribe to updates for that task.
+Server Capability: The A2A Server must indicate its support for streaming by setting capabilities.streaming: true in its Agent Card.
+Server Response (Connection): If the subscription is successful, the server responds with an HTTP 200 OK status and a Content-Type: text/event-stream. This HTTP connection remains open for the server to push events.
+Event Structure: The server sends events over this stream. Each event's data field contains a JSON-RPC 2.0 Response object, specifically a SendTaskStreamingResponse. The id in this JSON-RPC response matches the id from the client's original tasks/sendSubscribe request.
+Event Types (within SendTaskStreamingResponse.result):
+TaskStatusUpdateEvent: Communicates changes in the task's lifecycle state (e.g., from working to input-required or completed). It can also provide intermediate messages from the agent (e.g., "I'm currently analyzing the data...").
+TaskArtifactUpdateEvent: Delivers new or updated Artifacts generated by the task. This is used to stream large files or data structures in chunks. The Artifact object itself contains fields like index, append, and lastChunk to help the client reassemble the complete artifact.
+Stream Termination: The server signals the end of updates for a particular interaction cycle (i.e., for the current tasks/sendSubscribe request) by setting final: true in a TaskStatusUpdateEvent. This typically occurs when the task reaches a terminal state (completed, failed, canceled) or an input-required state (where the server expects further input from the client). After sending a final: true event, the server usually closes the SSE connection for that specific request.
+Resubscription: If a client's SSE connection breaks prematurely while a task is still active (and the server hasn't sent a final: true event for that phase), the client can attempt to reconnect to the stream using the tasks/resubscribe RPC method. The server's behavior regarding missed events during the disconnection period (e.g., whether it backfills or only sends new updates) is implementation-dependent.
+When to Use Streaming:
+
+
+Real-time progress monitoring of long-running tasks.
+Receiving large results (artifacts) incrementally, allowing processing to begin before the entire result is available.
+Interactive, conversational exchanges where immediate feedback or partial responses are beneficial.
+Applications requiring low-latency updates from the agent.
+Refer to the Protocol Specification for detailed structures:
+
+
+tasks/sendSubscribe
+tasks/resubscribe
+2. Push Notifications for Disconnected Scenarios¶
+For very long-running tasks (e.g., lasting minutes, hours, or even days) or when clients cannot or prefer not to maintain persistent connections (like mobile clients or serverless functions), A2A supports asynchronous updates via push notifications. This mechanism allows the A2A Server to actively notify a client-provided webhook when a significant task update occurs.
+
+
+Key Characteristics:
+
+
+Server Capability: The A2A Server must indicate its support for this feature by setting capabilities.pushNotifications: true in its Agent Card.
+Configuration: The client provides a PushNotificationConfig to the server. This configuration can be supplied:
+Within the initial tasks/send or tasks/sendSubscribe request (via the optional pushNotification parameter in TaskSendParams).
+Separately, using the tasks/pushNotification/set RPC method for an existing task. The PushNotificationConfig includes:
+url: The absolute HTTPS webhook URL where the A2A Server should send (POST) task update notifications.
+token (optional): A client-generated opaque string (e.g., a secret or task-specific identifier). The server SHOULD include this token in the notification request (e.g., in a custom header like X-A2A-Notification-Token) for validation by the client's webhook receiver.
+authentication (optional): An AuthenticationInfo object specifying how the A2A Server should authenticate itself to the client's webhook URL. The client (receiver of the webhook) defines these authentication requirements.
+Notification Trigger: The A2A Server decides when to send a push notification. Typically, this happens when a task reaches a significant state change, such as transitioning to a terminal state (completed, failed, canceled) or an input-required state, particularly after its associated message and artifacts are fully generated and stable.
+Notification Payload: The A2A protocol itself does not strictly define the HTTP body payload of the push notification sent by the server to the client's webhook. However, the notification SHOULD contain sufficient information for the client to identify the taskId and understand the general nature of the update (e.g., the new TaskState). Servers might send a minimal payload (just taskId and new state) or a more comprehensive one (e.g., a summary or even the full Task object).
+Client Action: Upon receiving a push notification (and successfully verifying its authenticity and relevance), the client typically uses the tasks/get RPC method with the taskId from the notification to retrieve the complete, updated Task object, including any new artifacts or detailed messages.
+The Push Notification Service (Client-Side Webhook Infrastructure):
+
+
+The target url specified in PushNotificationConfig.url points to a Push Notification Service. This service is a component on the client's side (or a service the client subscribes to) responsible for receiving the HTTP POST notification from the A2A Server.
+Its responsibilities include:
+Authenticating the incoming notification (i.e., verifying it's from the legitimate A2A Server).
+Validating the notification's relevance (e.g., checking the token).
+Relaying the notification or its content to the appropriate client application logic or system.
+In simple scenarios (e.g., local development), the client application itself might directly expose the webhook endpoint.
+In enterprise or production settings, this is often a robust, secure service that handles incoming webhooks, authenticates callers, and routes messages (e.g., to a message queue, an internal API, a mobile push notification gateway, or another event-driven system).
+Security Considerations for Push Notifications¶
+Security is paramount for push notifications due to their asynchronous and server-initiated outbound nature. Both the A2A Server (sending the notification) and the client's webhook receiver have responsibilities.
+
+
+A2A Server Security (When Sending Notifications to Client Webhook)¶
+Webhook URL Validation:
+
+
+Servers SHOULD NOT blindly trust and send POST requests to any url provided by a client in PushNotificationConfig. Malicious clients could provide URLs pointing to internal services or unrelated third-party systems to cause harm (Server-Side Request Forgery - SSRF attacks) or act as Distributed Denial of Service (DDoS) amplifiers.
+Mitigation Strategies:
+Allowlisting: Maintain an allowlist of trusted domains or IP ranges for webhook URLs, if feasible.
+Ownership Verification / Challenge-Response: Before sending actual notifications, the server can (and SHOULD ideally) perform a verification step. For example, it could issue an HTTP GET or OPTIONS request to the proposed webhook URL with a unique validationToken (as a query parameter or header). The webhook service must respond appropriately (e.g., echo back the token or confirm readiness) to prove ownership and reachability. The A2A Python samples demonstrate a simple validation token check mechanism.
+Network Controls: Use egress firewalls or network policies to restrict where the A2A Server can send outbound HTTP requests.
+Authenticating to the Client's Webhook:
+
+
+The A2A Server MUST authenticate itself to the client's webhook URL according to the scheme(s) specified in PushNotificationConfig.authentication.
+Common authentication schemes for server-to-server webhooks include:
+Bearer Tokens (OAuth 2.0): The A2A Server obtains an access token (e.g., using the OAuth 2.0 client credentials grant flow if the webhook provider supports it) for an audience/scope representing the client's webhook, and includes it in the Authorization: Bearer <token> header of the notification POST request.
+API Keys: A pre-shared API key that the A2A Server includes in a specific HTTP header (e.g., X-Api-Key).
+HMAC Signatures: The A2A Server signs the request payload (or parts of the request) with a shared secret key using HMAC, and includes the signature in a header (e.g., X-Hub-Signature). The webhook receiver then verifies this signature.
+Mutual TLS (mTLS): If supported by the client's webhook infrastructure, the A2A Server can present a client TLS certificate.
+Client Webhook Receiver Security (When Receiving Notifications from A2A Server)¶
+Authenticating the A2A Server:
+
+
+The webhook endpoint MUST rigorously verify the authenticity of incoming notification requests to ensure they originate from the legitimate A2A Server and not an imposter.
+Verify Signatures/Tokens:
+If using JWTs (e.g., as Bearer tokens), validate the JWT's signature against the A2A Server's trusted public keys (e.g., fetched from a JWKS endpoint provided by the A2A Server, if applicable). Also, validate claims like iss (issuer), aud (audience - should identify your webhook), iat (issued at), and exp (expiration time).
+If using HMAC signatures, recalculate the signature on the received payload using the shared secret and compare it to the signature in the request header.
+If using API keys, ensure the key is valid and known.
+Validate PushNotificationConfig.token: If the client provided an opaque token in its PushNotificationConfig when setting up notifications for the task, the webhook should check that the incoming notification includes this exact token (e.g., in a custom header like X-A2A-Notification-Token). This helps ensure the notification is intended for this specific client context and task, adding a layer of authorization.
+Preventing Replay Attacks:
+
+
+Timestamps: Notifications should ideally include a timestamp (e.g., iat - issued at - claim in a JWT, or a custom timestamp header). The webhook should reject notifications that are too old (e.g., older than a few minutes) to prevent attackers from replaying old, captured notifications. The timestamp should be part of the signed payload (if using signatures) to ensure its integrity.
+Nonces/Unique IDs: For critical notifications, consider using unique, single-use identifiers (nonces or event IDs) for each notification. The webhook should track received IDs (for a reasonable window) to prevent processing duplicate notifications. A JWT's jti (JWT ID) claim can serve this purpose.
+Secure Key Management and Rotation:
+
+
+If using cryptographic keys (symmetric secrets for HMAC, or asymmetric key pairs for JWT signing/mTLS), implement secure key management practices, including regular key rotation.
+For asymmetric keys where the A2A Server signs and the client webhook verifies, protocols like JWKS (JSON Web Key Set) allow the server to publish its public keys (including new ones during rotation) at a well-known endpoint. Client webhooks can then dynamically fetch the correct public key for signature verification, facilitating smoother key rotation.
+Example Asymmetric Key Flow (JWT + JWKS)¶
+Client sets PushNotificationConfig specifying authentication.schemes: ["Bearer"] and possibly an expected issuer or audience for the JWT.
+A2A Server, when sending a notification:
+Generates a JWT, signing it with its private key. The JWT includes claims like iss (issuer), aud (audience - the webhook), iat (issued at), exp (expires), jti (JWT ID), and taskId.
+The JWT header (alg and kid) indicates the signing algorithm and key ID.
+The A2A Server makes its public keys available via a JWKS endpoint (URL for this endpoint might be known to the webhook provider or discovered).
+Client Webhook, upon receiving the notification:
+Extracts the JWT from the Authorization header.
+Inspects the kid in the JWT header.
+Fetches the corresponding public key from the A2A Server's JWKS endpoint (caching keys is recommended).
+Verifies the JWT signature using the public key.
+Validates claims (iss, aud, iat, exp, jti).
+Checks the PushNotificationConfig.token if provided.
+This comprehensive, layered approach to security for push notifications ensures that messages are authentic, integral, and timely, protecting both the sending A2A Server and the receiving client webhook infrastructure.
+
+
+Agent2Agent (A2A) Protocol Specification¶
+Version: 0.1.0
+
+
+1. Introduction¶
+The Agent2Agent (A2A) Protocol is an open standard designed to facilitate communication and interoperability between independent, potentially opaque AI agent systems. In an ecosystem where agents might be built using different frameworks, languages, or by different vendors, A2A provides a common language and interaction model.
+
+
+This document provides the detailed technical specification for the A2A protocol. Its primary goal is to enable agents to:
+
+
+Discover each other's capabilities.
+Negotiate interaction modalities (text, files, structured data).
+Manage collaborative tasks.
+Securely exchange information to achieve user goals without needing access to each other's internal state, memory, or tools.
+1.1. Key Goals of A2A¶
+Interoperability: Bridge the communication gap between disparate agentic systems.
+Collaboration: Enable agents to delegate tasks, exchange context, and work together on complex user requests.
+Discovery: Allow agents to dynamically find and understand the capabilities of other agents.
+Flexibility: Support various interaction modes including synchronous request/response, streaming for real-time updates, and asynchronous push notifications for long-running tasks.
+Security: Facilitate secure communication patterns suitable for enterprise environments, relying on standard web security practices.
+Asynchronicity: Natively support long-running tasks and interactions that may involve human-in-the-loop scenarios.
+1.2. Guiding Principles¶
+Simple: Reuse existing, well-understood standards (HTTP, JSON-RPC 2.0, Server-Sent Events).
+Enterprise Ready: Address authentication, authorization, security, privacy, tracing, and monitoring by aligning with established enterprise practices.
+Async First: Designed for (potentially very) long-running tasks and human-in-the-loop interactions.
+Modality Agnostic: Support exchange of diverse content types including text, audio/video (via file references), structured data/forms, and potentially embedded UI components (e.g., iframes referenced in parts).
+Opaque Execution: Agents collaborate based on declared capabilities and exchanged information, without needing to share their internal thoughts, plans, or tool implementations.
+For a broader understanding of A2A's purpose and benefits, see What is A2A?.
+
+
+2. Core Concepts Summary¶
+A2A revolves around several key concepts. For detailed explanations, please refer to the Key Concepts guide.
+
+
+A2A Client: An application or agent that initiates requests to an A2A Server on behalf of a user or another system.
+A2A Server (Remote Agent): An agent or agentic system that exposes an A2A-compliant HTTP endpoint, processing tasks and providing responses.
+Agent Card: A JSON metadata document published by an A2A Server, describing its identity, capabilities, skills, service endpoint, and authentication requirements.
+Task: The fundamental unit of work managed by A2A, identified by a unique ID. Tasks are stateful and progress through a defined lifecycle.
+Message: A communication turn within a Task, having a role ("user" or "agent") and containing one or more Parts.
+Part: The smallest unit of content within a Message or Artifact (e.g., TextPart, FilePart, DataPart).
+Artifact: An output (e.g., a document, image, structured data) generated by the agent as a result of a task, composed of Parts.
+Streaming (SSE): Real-time, incremental updates for tasks (status changes, artifact chunks) delivered via Server-Sent Events.
+Push Notifications: Asynchronous task updates delivered via server-initiated HTTP POST requests to a client-provided webhook URL, for long-running or disconnected scenarios.
+Session: An optional, client-generated identifier to logically group related tasks.
+3. Transport and Format¶
+3.1. Transport Protocol¶
+A2A communication MUST occur over HTTP(S).
+The A2A Server exposes its service at a URL defined in its AgentCard.
+3.2. Data Format¶
+A2A uses JSON-RPC 2.0 as the payload format for all requests and responses (excluding the SSE stream wrapper).
+
+
+Client requests and server responses MUST adhere to the JSON-RPC 2.0 specification.
+The Content-Type header for HTTP requests and responses containing JSON-RPC payloads MUST be application/json.
+3.3. Streaming Transport (Server-Sent Events)¶
+When streaming is used for methods like tasks/sendSubscribe or tasks/resubscribe:
+
+
+The server responds with an HTTP 200 OK status and a Content-Type header of text/event-stream.
+The body of this HTTP response contains a stream of Server-Sent Events (SSE) as defined by the W3C.
+Each SSE data field contains a complete JSON-RPC 2.0 Response object (specifically, a SendTaskStreamingResponse).
+4. Authentication and Authorization¶
+A2A treats agents as standard enterprise applications, relying on established web security practices. Identity information is not transmitted within A2A JSON-RPC payloads; it is handled at the HTTP transport layer.
+
+
+For a comprehensive guide on enterprise security aspects, see Enterprise-Ready Features.
+
+
+4.1. Transport Security¶
+As stated in section 3.1, production deployments MUST use HTTPS. Implementations SHOULD use modern TLS configurations (TLS 1.2+ recommended) with strong cipher suites.
+
+
+4.2. Server Identity Verification¶
+A2A Clients SHOULD verify the A2A Server's identity by validating its TLS certificate against trusted certificate authorities (CAs) during the TLS handshake.
+
+
+4.3. Client/User Identity & Authentication Process¶
+Discovery of Requirements: The client discovers the server's required authentication schemes via the authentication field in the AgentCard. Scheme names often align with OpenAPI Authentication methods (e.g., "Bearer" for OAuth 2.0 tokens, "Basic" for Basic Auth, "ApiKey" for API keys).
+Credential Acquisition (Out-of-Band): The client obtains the necessary credentials (e.g., API keys, OAuth tokens, JWTs) through an out-of-band process specific to the required authentication scheme and the identity provider. This process is outside the scope of the A2A protocol itself.
+Credential Transmission: The client includes these credentials in the appropriate HTTP headers (e.g., Authorization: Bearer <token>, X-API-Key: <value>) of every A2A request sent to the server.
+4.4. Server Responsibilities for Authentication¶
+The A2A Server:
+
+
+MUST authenticate every incoming request based on the provided HTTP credentials and its declared authentication requirements from its Agent Card.
+SHOULD use standard HTTP status codes like 401 Unauthorized or 403 Forbidden for authentication challenges or rejections.
+SHOULD include relevant HTTP headers (e.g., WWW-Authenticate) with 401 Unauthorized responses to indicate the required authentication scheme(s), guiding the client.
+4.5. In-Task Authentication (Secondary Credentials)¶
+If an agent, during the execution of a task, requires additional credentials for a different system or resource (e.g., to access a specific tool on behalf of the user that requires its own auth):
+
+
+It SHOULD transition the A2A task to the input-required state (see TaskState).
+The accompanying TaskStatus.message (often a DataPart) SHOULD provide details about the required secondary authentication, potentially using an AuthenticationInfo-like structure to describe the need.
+The A2A Client then obtains these new credentials out-of-band and provides them in a subsequent tasks/send or tasks/sendSubscribe request. How these credentials are used (e.g., passed as data within the A2A message if the agent is proxying, or used by the client to interact directly with the secondary system) depends on the specific scenario.
+4.6. Authorization¶
+Once a client is authenticated, the A2A Server is responsible for authorizing the request based on the authenticated client/user identity and its own policies. Authorization logic is implementation-specific and MAY be enforced based on:
+
+
+The specific skills requested (e.g., as identified by AgentSkill.id from the Agent Card).
+The actions attempted within the task.
+Data access policies relevant to the resources the agent manages.
+OAuth scopes associated with the presented token, if applicable.
+Servers should implement the principle of least privilege.
+
+
+5. Agent Discovery: The Agent Card¶
+5.1. Purpose¶
+A2A Servers MUST make an Agent Card available. The Agent Card is a JSON document that describes the server's identity, capabilities, skills, service endpoint URL, and how clients should authenticate and interact with it. Clients use this information for discovering suitable agents and for configuring their interactions.
+
+
+For more on discovery strategies, see the Agent Discovery guide.
+
+
+5.2. Discovery Mechanisms¶
+Clients can find Agent Cards through various methods, including but not limited to:
+
+
+Well-Known URI: Accessing a predefined path on the agent's domain (see Section 5.3).
+Registries/Catalogs: Querying curated catalogs or registries of agents (which might be enterprise-specific, public, or domain-specific).
+Direct Configuration: Clients may be pre-configured with the Agent Card URL or the card content itself.
+5.3. Recommended Location¶
+If using the well-known URI strategy, the recommended location for an agent's Agent Card is: https://{server_domain}/.well-known/agent.json This follows the principles of RFC 8615 for well-known URIs.
+
+
+5.4. Security of Agent Cards¶
+Agent Cards themselves might contain information that is considered sensitive (e.g., the URL of an internal-only agent, or scheme-specific information in authentication.credentials).
+
+
+If an Agent Card contains sensitive information, the endpoint serving the card MUST be protected by appropriate access controls (e.g., mTLS, network restrictions, authentication required to fetch the card).
+It is generally NOT RECOMMENDED to include plaintext secrets (like static API keys) directly in an Agent Card. Prefer authentication schemes where clients obtain dynamic credentials out-of-band. If authentication.credentials is used, it should be for non-secret information like OAuth flow URLs or API key names (not values).
+5.5. AgentCard Object Structure¶
+
+
+// An AgentCard conveys key information about an A2A Server:
+// - Overall identity and descriptive details.
+// - Service endpoint URL.
+// - Supported A2A protocol capabilities (streaming, push notifications).
+// - Authentication requirements.
+// - Default input/output content types (MIME types).
+// - A list of specific skills the agent offers.
+interface AgentCard {
+  // Human-readable name of the agent (e.g., "Recipe Advisor Agent").
+  name: string;
+  // A human-readable description of the agent and its general purpose.
+  // [CommonMark](https://commonmark.org/) MAY be used for rich text formatting.
+  // (e.g., "This agent helps users find recipes, plan meals, and get cooking instructions.")
+  description?: string | null;
+  // The base URL endpoint for the agent's A2A service (where JSON-RPC requests are sent).
+  // Must be an absolute HTTPS URL for production (e.g., `https://agent.example.com/a2a/api`).
+  // HTTP MAY be used for local development/testing only.
+  url: string;
+  // Information about the organization or entity providing the agent.
+  provider?: AgentProvider | null;
+  // Version string for the agent or its A2A implementation
+  // (format is defined by the provider, e.g., "1.0.0", "2023-10-26-beta").
+  version: string;
+  // URL pointing to human-readable documentation for the agent (e.g., API usage, detailed skill descriptions).
+  documentationUrl?: string | null;
+  // Specifies optional A2A protocol features supported by this agent.
+  capabilities: AgentCapabilities;
+  // Authentication schemes required to interact with the agent's `url` endpoint.
+  // If `null`, omitted, or an empty `schemes` array, no A2A-level authentication is explicitly advertised
+  // (NOT recommended for production; other security like network ACLs might still apply).
+  authentication?: AgentAuthentication | null;
+  // Array of [MIME types](https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/MIME_types)
+  // the agent generally accepts as input across all skills, unless overridden by a specific skill.
+  // Default if omitted: `["text/plain"]`. Example: `["text/plain", "image/png"]`.
+  defaultInputModes?: string[];
+  // Array of MIME types the agent generally produces as output across all skills, unless overridden by a specific skill.
+  // Default if omitted: `["text/plain"]`. Example: `["text/plain", "application/json"]`.
+  defaultOutputModes?: string[];
+  // An array of specific skills or capabilities the agent offers.
+  // Must contain at least one skill if the agent is expected to perform actions beyond simple presence.
+  skills: AgentSkill[];
+}
+Field Name        Type        Required        Description
+name        string        Yes        Human-readable name of the agent.
+description        string | null        No        Human-readable description. CommonMark MAY be used.
+url        string        Yes        Base URL for the agent's A2A service. Must be absolute. HTTPS for production.
+provider        AgentProvider | null        No        Information about the agent's provider.
+version        string        Yes        Agent or A2A implementation version string.
+documentationUrl        string | null        No        URL to human-readable documentation for the agent.
+capabilities        AgentCapabilities        Yes        Specifies optional A2A protocol features supported (e.g., streaming, push notifications).
+authentication        AgentAuthentication | null        No        Authentication schemes required. null or empty implies no A2A-advertised auth (not recommended for production).
+defaultInputModes        string[]        No        Default accepted input MIME types. Defaults to ["text/plain"] if omitted.
+defaultOutputModes        string[]        No        Default produced output MIME types. Defaults to ["text/plain"] if omitted.
+skills        AgentSkill[]        Yes        Array of skills. Must have at least one if the agent performs actions.
+5.5.1. AgentProvider Object¶
+Information about the organization or entity providing the agent.
+
+
+
+
+interface AgentProvider {
+  // Name of the organization or entity.
+  organization: string;
+  // URL for the provider's organization website or relevant contact page.
+  url?: string | null;
+}
+Field Name        Type        Required        Description
+organization        string        Yes        Name of the organization/entity.
+url        string | null        No        URL for the provider's website/contact.
+5.5.2. AgentCapabilities Object¶
+Specifies optional A2A protocol features supported by the agent.
+
+
+
+
+interface AgentCapabilities {
+  // If `true`, the agent supports `tasks/sendSubscribe` and `tasks/resubscribe` for real-time
+  // updates via Server-Sent Events (SSE). Default: `false`.
+  streaming?: boolean;
+  // If `true`, the agent supports `tasks/pushNotification/set` and `tasks/pushNotification/get`
+  // for asynchronous task updates via webhooks. Default: `false`.
+  pushNotifications?: boolean;
+  // If `true`, the agent may include a detailed history of status changes
+  // within the `Task` object (future enhancement; specific mechanism TBD). Default: `false`.
+  stateTransitionHistory?: boolean;
+}
+Field Name        Type        Required        Default        Description
+streaming        boolean        No        false        Indicates support for SSE streaming methods (tasks/sendSubscribe, tasks/resubscribe).
+pushNotifications        boolean        No        false        Indicates support for push notification methods (tasks/pushNotification/*).
+stateTransitionHistory        boolean        No        false        Placeholder for future feature: exposing detailed task status change history.
+5.5.3. AgentAuthentication Object¶
+Describes the authentication requirements for accessing the agent's url endpoint.
+
+
+
+
+interface AgentAuthentication {
+  // Array of authentication scheme names supported/required by the agent's endpoint
+  // (e.g., "Bearer", "Basic", "OAuth2", "ApiKey").
+  // Standard names (e.g., from OpenAPI specification, IANA registry) SHOULD be used where applicable.
+  // An empty array means no specific A2A-level schemes are advertised.
+  schemes: string[];
+  // Optional field, MAY contain non-secret, scheme-specific information.
+  // Examples: For "OAuth2", this could be a JSON string with `tokenUrl`, `authorizationUrl`, `scopes`.
+  // For "ApiKey", it could specify the header name (`in: "header"`, `name: "X-Custom-API-Key"`).
+  // **CRITICAL**: This field MUST NOT contain plaintext secrets (e.g., actual API key values, passwords).
+  // If the Agent Card itself needs to be protected due to this field containing sensitive URLs
+  // or configuration, the endpoint serving the Agent Card MUST be secured.
+  credentials?: string | null; // E.g., A JSON string parsable by the client for scheme details.
+}
+Field Name        Type        Required        Description
+schemes        string[]        Yes        Array of auth scheme names (e.g., "Bearer", "OAuth2", "ApiKey"). Empty array means no A2A-advertised schemes.
+credentials        string | null        No        Optional non-secret, scheme-specific configuration info (e.g., OAuth URLs, API key header name). MUST NOT contain plaintext secrets. Secure the Agent Card if this field implies sensitivity.
+5.5.4. AgentSkill Object¶
+Describes a specific capability, function, or area of expertise the agent can perform or address.
+
+
+
+
+interface AgentSkill {
+  // A unique identifier for this skill within the context of this agent
+  // (e.g., "currency-converter", "generate-image-from-prompt", "summarize-text-v2").
+  // Clients MAY use this ID to request a specific skill if the agent supports such dispatch.
+  id: string;
+  // Human-readable name of the skill (e.g., "Currency Conversion Service", "Image Generation AI").
+  name: string;
+  // Detailed description of what the skill does, its purpose, and any important considerations.
+  // [CommonMark](https://commonmark.org/) MAY be used for rich text formatting.
+  description?: string | null;
+  // Array of keywords or categories for discoverability and categorization
+  // (e.g., ["finance", "conversion"], ["media", "generative ai", "image"]).
+  tags?: string[] | null;
+  // Array of example prompts, inputs, or use cases illustrating how to use this skill
+  // (e.g., ["convert 100 USD to EUR", "generate a photorealistic image of a cat wearing a wizard hat"]).
+  // These help clients (and potentially end-users or other agents) understand how to formulate requests for this skill.
+  examples?: string[] | null;
+  // Overrides `agentCard.defaultInputModes` specifically for this skill.
+  // If `null` or omitted, the agent's `defaultInputModes` apply.
+  inputModes?: string[] | null; // Array of MIME types
+  // Overrides `agentCard.defaultOutputModes` specifically for this skill.
+  // If `null` or omitted, the agent's `defaultOutputModes` apply.
+  outputModes?: string[] | null; // Array of MIME types
+}
+Field Name        Type        Required        Description
+id        string        Yes        Unique skill identifier within this agent.
+name        string        Yes        Human-readable skill name.
+description        string | null        No        Detailed skill description. CommonMark MAY be used.
+tags        string[] | null        No        Keywords/categories for discoverability.
+examples        string[] | null        No        Example prompts or use cases demonstrating skill usage.
+inputModes        string[] | null        No        Overrides defaultInputModes for this specific skill. Accepted MIME types.
+outputModes        string[] | null        No        Overrides defaultOutputModes for this specific skill. Produced MIME types.
+5.6. Sample Agent Card¶
+
+
+{
+  "name": "GeoSpatial Route Planner Agent",
+  "description": "Provides advanced route planning, traffic analysis, and custom map generation services. This agent can calculate optimal routes, estimate travel times considering real-time traffic, and create personalized maps with points of interest.",
+  "url": "https://georoute-agent.example.com/a2a/v1",
+  "provider": {
+    "organization": "Example Geo Services Inc.",
+    "url": "https://www.examplegeoservices.com"
+  },
+  "version": "1.2.0",
+  "documentationUrl": "https://docs.examplegeoservices.com/georoute-agent/api",
+  "capabilities": {
+    "streaming": true,
+    "pushNotifications": true,
+    "stateTransitionHistory": false
+  },
+  "authentication": {
+    "schemes": ["OAuth2"],
+    "credentials": "{\"authorizationUrl\": \"https://auth.examplegeoservices.com/authorize\", \"tokenUrl\": \"https://auth.examplegeoservices.com/token\", \"scopes\": {\"route:plan\": \"Allows planning new routes.\", \"map:custom\": \"Allows creating and managing custom maps.\"}}"
+  },
+  "defaultInputModes": ["application/json", "text/plain"],
+  "defaultOutputModes": ["application/json", "image/png"],
+  "skills": [
+    {
+      "id": "route-optimizer-traffic",
+      "name": "Traffic-Aware Route Optimizer",
+      "description": "Calculates the optimal driving route between two or more locations, taking into account real-time traffic conditions, road closures, and user preferences (e.g., avoid tolls, prefer highways).",
+      "tags": ["maps", "routing", "navigation", "directions", "traffic"],
+      "examples": [
+        "Plan a route from '1600 Amphitheatre Parkway, Mountain View, CA' to 'San Francisco International Airport' avoiding tolls.",
+        "{\"origin\": {\"lat\": 37.422, \"lng\": -122.084}, \"destination\": {\"lat\": 37.7749, \"lng\": -122.4194}, \"preferences\": [\"avoid_ferries\"]}"
+      ],
+      "inputModes": ["application/json", "text/plain"],
+      "outputModes": [
+        "application/json",
+        "application/vnd.geo+json",
+        "text/html"
+      ]
+    },
+    {
+      "id": "custom-map-generator",
+      "name": "Personalized Map Generator",
+      "description": "Creates custom map images or interactive map views based on user-defined points of interest, routes, and style preferences. Can overlay data layers.",
+      "tags": ["maps", "customization", "visualization", "cartography"],
+      "examples": [
+        "Generate a map of my upcoming road trip with all planned stops highlighted.",
+        "Show me a map visualizing all coffee shops within a 1-mile radius of my current location."
+      ],
+      "inputModes": ["application/json"],
+      "outputModes": [
+        "image/png",
+        "image/jpeg",
+        "application/json",
+        "text/html"
+      ]
+    }
+  ]
+}
+6. Protocol Data Objects¶
+These objects define the structure of data exchanged within the JSON-RPC methods of the A2A protocol.
+
+
+6.1. Task Object¶
+Represents the stateful unit of work being processed by the A2A Server for an A2A Client. A task encapsulates the entire interaction related to a specific goal or request.
+
+
+
+
+interface Task {
+  // A unique identifier for the task. This ID is typically generated by the client
+  // when initiating the task and MUST be used by the server to refer to this task.
+  // It should be sufficiently unique (e.g., a UUID v4).
+  id: string;
+  // An optional, client-generated identifier used to group related tasks into a logical session.
+  // Useful for maintaining context across multiple, sequential, or related tasks.
+  sessionId?: string | null;
+  // The current status of the task, including its lifecycle state, an optional associated message,
+  // and a timestamp.
+  status: TaskStatus;
+  // An array of outputs (artifacts) generated by the agent for this task.
+  // This array can be populated incrementally, especially during streaming.
+  // Artifacts represent the tangible results of the task.
+  artifacts?: Artifact[] | null;
+  // An optional array of recent messages exchanged within this task,
+  // ordered chronologically (oldest first).
+  // This history is included if requested by the client via the `historyLength` parameter
+  // in `TaskSendParams` or `TaskQueryParams`.
+  history?: Message[] | null;
+  // Arbitrary key-value metadata associated with the task.
+  // Keys SHOULD be strings; values can be any valid JSON type (string, number, boolean, array, object).
+  // This can be used for application-specific data, tracing info, etc.
+  metadata?: Record<string, any> | null;
+}
+Field Name        Type        Required        Description
+id        string        Yes        Unique task identifier (e.g., UUID), typically client-generated.
+sessionId        string | null        No        Optional client-generated ID to group related tasks into a session.
+status        TaskStatus        Yes        Current status of the task (state, message, timestamp).
+artifacts        Artifact[] | null        No        Array of outputs generated by the agent for this task.
+history        Message[] | null        No        Optional array of recent messages exchanged, if requested by historyLength.
+metadata        Record<string, any> | null        No        Arbitrary key-value metadata associated with the task.
+6.2. TaskStatus Object¶
+Represents the current state and associated context (e.g., a message from the agent) of a Task.
+
+
+
+
+interface TaskStatus {
+  // The current lifecycle state of the task.
+  state: TaskState;
+  // An optional message associated with the current status.
+  // This could be a progress update from the agent, a prompt for more input,
+  // a summary of the final result, or an error message.
+  message?: Message | null;
+  // The date and time (UTC is STRONGLY recommended) when this status was recorded by the server.
+  // Format: ISO 8601 `date-time` string (e.g., "2023-10-27T10:00:00Z").
+  timestamp?: string | null;
+}
+Field Name        Type        Required        Description
+state        TaskState        Yes        Current lifecycle state of the task.
+message        Message | null        No        Optional message providing context for the current status.
+timestamp        string (ISO 8601) | null        No        Timestamp (UTC recommended) when this status was recorded.
+6.3. TaskState Enum¶
+Defines the possible lifecycle states of a Task.
+
+
+
+
+type TaskState =
+  | 'submitted' // Task received by server, acknowledged, but processing has not yet actively started.
+  | 'working' // Task is actively being processed by the agent.
+  | 'input-required' // Agent requires additional input from the client/user to proceed. (Task is paused)
+  | 'completed' // Task finished successfully. (Terminal state)
+  | 'canceled' // Task was canceled by the client or potentially by the server. (Terminal state)
+  | 'failed' // Task terminated due to an error during processing. (Terminal state)
+  | 'unknown'; // The state of the task cannot be determined (e.g., task ID invalid or expired). (Effectively a terminal state from client's PoV for that ID)
+Value        Description        Terminal?
+submitted        Task received by the server and acknowledged, but processing has not yet actively started.        No
+working        Task is actively being processed by the agent. Client may expect further updates or a terminal state.        No
+input-required        Agent requires additional input from the client/user to proceed. The task is effectively paused.        No (Pause)
+completed        Task finished successfully. Results are typically available in Task.artifacts or TaskStatus.message.        Yes
+canceled        Task was canceled (e.g., by a tasks/cancel request or server-side policy).        Yes
+failed        Task terminated due to an error during processing. TaskStatus.message may contain error details.        Yes
+unknown        The state of the task cannot be determined (e.g., task ID is invalid, unknown, or has expired).        Yes
+6.4. Message Object¶
+Represents a single communication turn or a piece of contextual information within a Task. Messages are used for instructions, prompts, replies, and status updates.
+
+
+
+
+interface Message {
+  // Indicates the sender of the message:
+  // "user" for messages originating from the A2A Client (acting on behalf of an end-user or system).
+  // "agent" for messages originating from the A2A Server (the remote agent).
+  role: 'user' | 'agent';
+  // An array containing the content of the message, broken down into one or more parts.
+  // A message MUST contain at least one part.
+  // Using multiple parts allows for rich, multi-modal content (e.g., text accompanying an image).
+  parts: Part[];
+  // Arbitrary key-value metadata associated with the message.
+  // Keys SHOULD be strings; values can be any valid JSON type.
+  // Useful for timestamps, source identifiers, language codes, etc.
+  metadata?: Record<string, any> | null;
+}
+Field Name        Type        Required        Description
+role        "user" | "agent"        Yes        Indicates the sender: "user" (from A2A Client) or "agent" (from A2A Server).
+parts        Part[]        Yes        Array of content parts. Must contain at least one part.
+metadata        Record<string, any> | null        No        Arbitrary key-value metadata associated with this message.
+6.5. Part Union Type¶
+Represents a distinct piece of content within a Message or Artifact. A Part object is a discriminated union, identified by its mandatory type field. All Part types also include an optional metadata field (Record<string, any> | null) for part-specific metadata.
+
+
+It MUST be one of the following:
+
+
+6.5.1. TextPart Object¶
+For conveying plain textual content.
+
+
+
+
+interface TextPart {
+  type: 'text'; // Discriminator
+  text: string; // The actual textual content.
+  metadata?: Record<string, any> | null; // Optional metadata (e.g., language, formatting hints if any)
+}
+Field Name        Type        Required        Description
+type        "text" (literal)        Yes        Identifies this part as textual content.
+text        string        Yes        The textual content of the part.
+metadata        Record<string, any> | null        No        Optional metadata specific to this text part.
+6.5.2. FilePart Object¶
+For conveying file-based content.
+
+
+
+
+interface FilePart {
+  type: 'file'; // Discriminator
+  file: FileContent; // Contains the file details and data (or reference).
+  metadata?: Record<string, any> | null; // Optional metadata (e.g., purpose of the file)
+}
+Field Name        Type        Required        Description
+type        "file" (literal)        Yes        Identifies this part as file content.
+file        FileContent        Yes        Contains the file details and data/reference.
+metadata        Record<string, any> | null        No        Optional metadata specific to this file part.
+6.5.3. DataPart Object¶
+For conveying structured JSON data. Useful for forms, parameters, or any machine-readable information.
+
+
+
+
+interface DataPart {
+  type: 'data'; // Discriminator
+  // The structured JSON data payload. This can be any valid JSON object or array.
+  // The schema of this data is application-defined and may be implicitly understood
+  // by the interacting agents or explicitly described (e.g., via a JSON Schema reference
+  // in the `metadata` or associated `AgentSkill`).
+  data: Record<string, any> | any[];
+  metadata?: Record<string, any> | null; // Optional metadata (e.g., schema URL, version)
+}
+Field Name        Type        Required        Description
+type        "data" (literal)        Yes        Identifies this part as structured data.
+data        Record<string, any> | any[]        Yes        The structured JSON data payload (an object or an array).
+metadata        Record<string, any> | null        No        Optional metadata specific to this data part (e.g., reference to a schema).
+6.6. FileContent Object¶
+Represents the data or reference for a file, used within a FilePart.
+
+
+
+
+interface FileContent {
+  // The original filename, if known (e.g., "document.pdf", "avatar.png").
+  name?: string | null;
+  // The [MIME type](https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/MIME_types)
+  // of the file (e.g., "application/pdf", "image/png"). Strongly recommended for proper handling.
+  mimeType?: string | null;
+  // Base64 encoded string of the raw file content.
+  // Use this for embedding small to medium-sized files directly.
+  bytes?: string | null; // Base64 string
+  // A URI (absolute URL is STRONGLY recommended) pointing to the file content.
+  // Accessibility of this URI depends on the context (e.g., public URL, pre-signed URL, internal URL).
+  // The client and server must have a way to resolve and access this URI if used.
+  uri?: string | null;
+
+
+  // Constraint: If file content is being transmitted, exactly one of `bytes` or `uri` MUST be non-null.
+  // Both MAY be `null` or absent if the `FilePart` is merely representing a file reference
+  // without transmitting its content in the current message (e.g., referring to a previously uploaded file).
+}
+Field Name        Type        Required        Description
+name        string | null        No        Original filename (e.g., "report.pdf").
+mimeType        string | null        No        MIME type (e.g., image/png). Strongly recommended.
+bytes        string | null        Conditionally (See Constraint)        Base64 encoded file content.
+uri        string | null        Conditionally (See Constraint)        URI (absolute URL strongly recommended) to file content. Accessibility is context-dependent.
+Constraint: If file content is being transmitted, exactly one of bytes or uri MUST be provided and non-null. Both MAY be null or absent if the FilePart is only a reference or metadata about a file whose content is not being transferred in this specific part.
+
+
+6.7. Artifact Object¶
+Represents a tangible output generated by the agent during a task. Artifacts are the results or products of the agent's work.
+
+
+
+
+interface Artifact {
+  // A descriptive name for the artifact (e.g., "Quarterly Sales Report.pdf", "Generated Logo Design", "analysis_results.json").
+  // This name might be used by the client for display or identification.
+  name?: string | null;
+  // A human-readable description of the artifact. [CommonMark](https://commonmark.org/) MAY be used.
+  description?: string | null;
+  // An array containing the content of the artifact, broken down into one or more parts.
+  // An artifact MUST contain at least one part.
+  // Using multiple parts allows for complex artifacts (e.g., a report with embedded images or data tables).
+  parts: Part[];
+  // A non-negative integer index for ordering artifacts or identifying artifact chunks during streaming.
+  // Multiple artifacts (or artifact updates) can share the same index if they represent parts of the same logical output
+  // that are being streamed or delivered separately.
+  // Default: 0 if omitted.
+  index?: number;
+  // Used with streaming (`TaskArtifactUpdateEvent`):
+  // If `true`, indicates this update's `parts` should be appended to the content of the artifact
+  // currently identified by the same `index` value. This is useful for streaming textual data or
+  // appending elements to a list in a `DataPart`.
+  // If `false` or `null` (or omitted), this update replaces the artifact content at the given `index`.
+  // This field is typically `false` for the first chunk of a streamed artifact.
+  append?: boolean | null;
+  // Used with streaming (`TaskArtifactUpdateEvent`):
+  // If `true`, indicates this is the final update/chunk for the artifact at this `index`.
+  // Signals the end of a streamed file or data structure.
+  lastChunk?: boolean | null;
+  // Arbitrary key-value metadata associated with the artifact.
+  // Keys SHOULD be strings; values can be any valid JSON type.
+  // Useful for creation timestamps, versioning info, checksums, etc.
+  metadata?: Record<string, any> | null;
+}
+Field Name        Type        Required        Default        Description
+name        string | null        No        null        Descriptive name for the artifact.
+description        string | null        No        null        Human-readable description of the artifact.
+parts        Part[]        Yes                Content of the artifact, as one or more Part objects. Must have at least one.
+index        integer        No        0        Non-negative index for ordering artifacts or identifying chunks during streaming.
+append        boolean | null        No        false        In streaming (TaskArtifactUpdateEvent), true means append parts to artifact at index; false (default) means replace.
+lastChunk        boolean | null        No        false        In streaming (TaskArtifactUpdateEvent), true indicates this is the final update for the artifact at this index.
+metadata        Record<string, any> | null        No        null        Arbitrary key-value metadata associated with the artifact.
+6.8. PushNotificationConfig Object¶
+Configuration provided by the client to the server for sending asynchronous push notifications about task updates.
+
+
+
+
+interface PushNotificationConfig {
+  // The absolute HTTPS webhook URL where the A2A Server should POST task updates.
+  // This URL MUST be HTTPS for security.
+  url: string;
+  // An optional, client-generated opaque token (e.g., a secret, a task-specific identifier, or a nonce).
+  // The A2A Server SHOULD include this token in the notification request it sends to the `url`
+  // (e.g., in a custom HTTP header like `X-A2A-Notification-Token` or similar).
+  // This allows the client's webhook receiver to validate the relevance and authenticity of the notification.
+  token?: string | null;
+  // Authentication details the A2A Server needs to use when calling the client's `url`.
+  // The client's webhook endpoint defines these requirements. This tells the A2A Server how to authenticate *itself* to the client's webhook.
+  authentication?: AuthenticationInfo | null;
+}
+Field Name        Type        Required        Description
+url        string        Yes        Absolute HTTPS webhook URL for the A2A Server to POST task updates to.
+token        string | null        No        Optional client-generated opaque token for the client's webhook receiver to validate the notification (e.g., server includes it in an X-A2A-Notification-Token header).
+authentication        AuthenticationInfo | null        No        Authentication details the A2A Server must use when calling the url. The client's webhook (receiver) defines these requirements.
+6.9. AuthenticationInfo Object (for Push Notifications)¶
+A generic structure for specifying authentication requirements, typically used within PushNotificationConfig to describe how the A2A Server should authenticate to the client's webhook.
+
+
+
+
+interface AuthenticationInfo {
+  // Array of authentication scheme names the caller (i.e., the A2A Server, in the context of push notifications)
+  // must use when sending the request to the webhook URL (e.g., "Bearer" for an OAuth token, "ApiKey" for a pre-shared key, "Basic").
+  // Standard names SHOULD be used.
+  schemes: string[];
+  // Optional field for providing static credentials or scheme-specific information
+  // that the A2A Server needs to use.
+  // Examples:
+  // - For "ApiKey": A JSON string like `{"in": "header", "name": "X-Client-Webhook-Key", "value": "actual_api_key_value"}`.
+  // - For "Bearer": If the A2A Server is expected to use a specific pre-issued token, it could be provided here. More commonly, the server would obtain its own token using OAuth client credentials flow if this field specifies an OAuth scheme.
+  // **CRITICAL**: Use with extreme caution if this field contains secrets. This configuration is sent from client to server.
+  // Prefer mechanisms where the server fetches its own credentials dynamically (e.g., OAuth client credentials flow with a pre-configured client ID/secret on the server side for the webhook's audience)
+  // rather than having the client provide secrets to the server.
+  // If this field *must* carry a secret, the A2A communication channel itself must be exceptionally secure, and both client and server must handle this data with care.
+  credentials?: string | null; // E.g., A JSON string parsable by the server.
+}
+Field Name        Type        Required        Description
+schemes        string[]        Yes        Array of auth scheme names the A2A Server must use when calling the client's webhook (e.g., "Bearer", "ApiKey").
+credentials        string | null        No        Optional static credentials or scheme-specific configuration info. Handle with EXTREME CAUTION if secrets are involved. Prefer server-side dynamic credential fetching where possible.
+6.10. TaskPushNotificationConfig Object¶
+Used as the params object for the tasks/pushNotification/set method and as the result object for the tasks/pushNotification/get method.
+
+
+
+
+interface TaskPushNotificationConfig {
+  // The ID of the task for which push notification settings are being configured or retrieved.
+  id: string;
+  // The push notification configuration details.
+  // When used as params for `set`, this provides the configuration to apply.
+  // When used as result for `get`, this reflects the currently active configuration (server MAY omit secrets).
+  // If `null` when setting, it might indicate clearing existing configuration (server-dependent).
+  pushNotificationConfig: PushNotificationConfig | null;
+}
+Field Name        Type        Required        Description
+id        string        Yes        The ID of the task to configure push notifications for, or retrieve configuration from.
+pushNotificationConfig        PushNotificationConfig | null        Yes        The push notification configuration. For set, the desired config. For get, the current config (secrets MAY be omitted by server). null might clear config on set.
+6.11. JSON-RPC Structures¶
+A2A adheres to the standard JSON-RPC 2.0 structures for requests and responses.
+
+
+6.11.1. JSONRPCRequest Object¶
+All A2A method calls are encapsulated in a JSON-RPC Request object.
+
+
+jsonrpc: A String specifying the version of the JSON-RPC protocol. MUST be exactly "2.0".
+method: A String containing the name of the method to be invoked (e.g., "tasks/send", "tasks/get").
+params: A Structured value that holds the parameter values to be used during the invocation of the method. This member MAY be omitted if the method expects no parameters. A2A methods typically use an object for params.
+id: An identifier established by the Client that MUST contain a String, Number, or NULL value if included. If it is not included it is assumed to be a notification. The value SHOULD NOT be NULL for requests expecting a response, and Numbers SHOULD NOT contain fractional parts. The Server MUST reply with the same value in the Response object if included. This member is used to correlate the context between the two objects. A2A methods typically expect a response or stream, so id will usually be present and non-null.
+6.11.2. JSONRPCResponse Object¶
+Responses from the A2A Server are encapsulated in a JSON-RPC Response object.
+
+
+jsonrpc: A String specifying the version of the JSON-RPC protocol. MUST be exactly "2.0".
+id: This member is REQUIRED. It MUST be the same as the value of the id member in the Request Object. If there was an error in detecting the id in the Request object (e.g. Parse error/Invalid Request), it MUST be null.
+EITHER result: This member is REQUIRED on success. This member MUST NOT exist if there was an error invoking the method. The value of this member is determined by the method invoked on the Server.
+OR error: This member is REQUIRED on failure. This member MUST NOT exist if there was no error triggered during invocation. The value of this member MUST be an JSONRPCError object.
+The members result and error are mutually exclusive: one MUST be present, and the other MUST NOT.
+6.12. JSONRPCError Object¶
+When a JSON-RPC call encounters an error, the Response Object will contain an error member with a value of this structure.
+
+
+
+
+interface JSONRPCError {
+  // A Number that indicates the error type that occurred.
+  // This MUST be an integer.
+  code: number;
+  // A String providing a short description of the error.
+  // The message SHOULD be limited to a concise single sentence.
+  message: string;
+  // A Primitive or Structured value that contains additional information about the error.
+  // This may be omitted. The value of this member is defined by the Server (e.g. detailed error codes,
+  // debugging information).
+  data?: any;
+}
+Field Name        Type        Required        Description
+code        integer        Yes        Integer error code. See Section 8 (Error Handling) for standard and A2A-specific codes.
+message        string        Yes        Short, human-readable summary of the error.
+data        any | null        No        Optional additional structured information about the error.
+7. Protocol RPC Methods¶
+All A2A RPC methods are invoked by the A2A Client by sending an HTTP POST request to the A2A Server's url (as specified in its AgentCard). The body of the HTTP POST request MUST be a JSONRPCRequest object, and the Content-Type header MUST be application/json.
+
+
+The A2A Server's HTTP response body MUST be a JSONRPCResponse object (or, for streaming methods, an SSE stream where each event's data is a JSONRPCResponse). The Content-Type for JSON-RPC responses is application/json. For SSE streams, it is text/event-stream.
+
+
+7.1. tasks/send¶
+Sends a message to an agent to initiate a new task or to continue an existing one. This method is suitable for synchronous request/response interactions or when client-side polling (using tasks/get) is acceptable for monitoring longer-running tasks.
+
+
+Request params type: TaskSendParams
+Response result type (on success): Task (The current or final state of the task after processing the message).
+Response error type (on failure): JSONRPCError.
+7.1.1. TaskSendParams Object¶
+
+
+interface TaskSendParams {
+  // The ID for the task.
+  // - If this is the first message for a new task, the client generates this ID.
+  // - If this message continues an existing task (e.g., providing more input after an `input-required` state),
+  //   this ID MUST match the ID of the existing task.
+  id: string;
+  // Optional client-generated session ID to group this task with others.
+  sessionId?: string | null;
+  // The message to send to the agent. The `role` within this message is typically "user".
+  message: Message;
+  // Optional: If initiating a new task, the client MAY include push notification configuration.
+  // If provided for an existing task, server behavior (e.g., update config, ignore) is server-dependent.
+  // Requires `AgentCard.capabilities.pushNotifications: true`.
+  pushNotification?: PushNotificationConfig | null;
+  // Optional: If a positive integer `N` is provided, the server SHOULD include the last `N` messages
+  // (chronologically) of the task's history in the `Task.history` field of the response.
+  // If `0`, `null`, or omitted, no history is explicitly requested (server MAY still include some by default).
+  historyLength?: number | null;
+  // Arbitrary metadata for this specific `tasks/send` request.
+  metadata?: Record<string, any> | null;
+}
+Field Name        Type        Required        Description
+id        string        Yes        Task ID. If new, the server SHOULD create the task. If existing, this message continues the task.
+sessionId        string | null        No        Optional client-generated session ID.
+message        Message        Yes        The message content to send. Message.role is typically "user".
+pushNotification        PushNotificationConfig | null        No        Optional: sets push notification configuration for the task (usually on the first send). Requires server capability.
+historyLength        integer | null        No        If positive, requests the server to include up to N recent messages in Task.history.
+metadata        Record<string, any> | null        No        Request-specific metadata.
+7.2. tasks/sendSubscribe¶
+Sends a message to an agent to initiate/continue a task AND subscribes the client to real-time updates for that task via Server-Sent Events (SSE). This method requires the server to have AgentCard.capabilities.streaming: true.
+
+
+Request params type: TaskSendParams (same as tasks/send).
+Response (on successful subscription):
+HTTP Status: 200 OK.
+HTTP Content-Type: text/event-stream.
+HTTP Body: A stream of Server-Sent Events. Each SSE data field contains a SendTaskStreamingResponse JSON object.
+Response (on initial subscription failure):
+Standard HTTP error code (e.g., 4xx, 5xx).
+The HTTP body MAY contain a standard JSONRPCResponse with an error object detailing the failure.
+7.2.1. SendTaskStreamingResponse Object¶
+This is the structure of the JSON object found in the data field of each Server-Sent Event sent by the server for a tasks/sendSubscribe or tasks/resubscribe stream. It's a JSONRPCResponse where the result is one of the event types.
+
+
+
+
+interface SendTaskStreamingResponse extends JSONRPCResponse {
+  // The `id` MUST match the `id` from the originating `tasks/sendSubscribe` (or `tasks/resubscribe`)
+  // JSON-RPC request that established this SSE stream.
+  id: string | number; // Overrides JSONRPCResponse 'id' type for clarity and to emphasize it matches the original request.
+  // The `result` field contains the actual event payload for this streaming update.
+  // It will be either a TaskStatusUpdateEvent or a TaskArtifactUpdateEvent.
+  result: TaskStatusUpdateEvent | TaskArtifactUpdateEvent;
+  // For streaming events, `error` is typically `null` or absent.
+  // If a fatal error occurs that terminates the stream, the server MAY send a final
+  // SSE event with this `error` field populated before closing the connection.
+  error?: JSONRPCError | null;
+}
+Field Name        Type        Required        Description
+jsonrpc        "2.0" (literal)        Yes        JSON-RPC version string.
+id        string | number        Yes        Matches the id from the originating tasks/sendSubscribe or tasks/resubscribe request.
+result        Either TaskStatusUpdateEvent
+OR TaskArtifactUpdateEvent        Yes        The event payload: either a status update or an artifact update.
+error        JSONRPCError | null        No        Typically null or absent for stream events. If a fatal stream error occurs, this MAY be populated in the final SSE message before the stream closes.
+7.2.2. TaskStatusUpdateEvent Object¶
+Carries information about a change in the task's status during streaming. This is one of the possible result types in a SendTaskStreamingResponse.
+
+
+
+
+interface TaskStatusUpdateEvent {
+  // The ID of the task being updated. This MUST match the `TaskSendParams.id`
+  // from the `tasks/sendSubscribe` request that initiated this stream.
+  id: string;
+  // The new status object for the task.
+  status: TaskStatus;
+  // If `true`, this `TaskStatusUpdateEvent` signifies the terminal status update for the current
+  // `tasks/sendSubscribe` interaction cycle. This means the task has reached a state like
+  // `completed`, `failed`, `canceled`, or `input-required`, and the server does not expect to send
+  // more updates for *this specific* `sendSubscribe` request. The server typically closes the SSE
+  // connection after sending an event with `final: true`.
+  // Default: `false` if omitted.
+  final?: boolean;
+  // Arbitrary metadata for this specific status update event.
+  metadata?: Record<string, any> | null;
+}
+Field Name        Type        Required        Default        Description
+id        string        Yes                Task ID being updated, matching the original request's task ID.
+status        TaskStatus        Yes                The new TaskStatus object.
+final        boolean        No        false        If true, indicates this is the terminal status update for the current stream cycle. The server typically closes the SSE connection after this.
+metadata        Record<string, any> | null        No        null        Event-specific metadata.
+7.2.3. TaskArtifactUpdateEvent Object¶
+Carries a new or updated artifact (or a chunk of an artifact) generated by the task during streaming. This is one of the possible result types in a SendTaskStreamingResponse.
+
+
+
+
+interface TaskArtifactUpdateEvent {
+  // The ID of the task that generated this artifact. This MUST match the `TaskSendParams.id`
+  // from the `tasks/sendSubscribe` request that initiated this stream.
+  id: string;
+  // The artifact data. This could be a complete artifact or an incremental chunk.
+  // The client uses `artifact.index`, `artifact.append`, and `artifact.lastChunk`
+  // to correctly assemble or update the artifact on its side.
+  artifact: Artifact;
+  // Arbitrary metadata for this specific artifact update event.
+  metadata?: Record<string, any> | null;
+}
+Field Name        Type        Required        Default        Description
+id        string        Yes                Task ID that generated the artifact, matching the original request's task ID.
+artifact        Artifact        Yes                The Artifact data. Could be a complete artifact or an incremental chunk. Use index, append, and lastChunk fields within Artifact for client-side assembly.
+metadata        Record<string, any> | null        No        null        Event-specific metadata.
+7.3. tasks/get¶
+Retrieves the current state (including status, artifacts, and optionally history) of a previously initiated task. This is typically used for polling the status of a task initiated with tasks/send, or for fetching the final state of a task after being notified via a push notification or after an SSE stream has ended.
+
+
+Request params type: TaskQueryParams
+Response result type (on success): Task (A snapshot of the task's current state).
+Response error type (on failure): JSONRPCError (e.g., if the task ID is not found, see TaskNotFoundError).
+7.3.1. TaskQueryParams Object¶
+
+
+interface TaskQueryParams {
+  // The ID of the task to retrieve.
+  id: string;
+  // Optional: If a positive integer `N` is provided, the server SHOULD include the last `N` messages
+  // (chronologically) of the task's history in the `Task.history` field of the response.
+  // If `0`, `null`, or omitted, no history is explicitly requested.
+  historyLength?: number | null;
+  // Arbitrary metadata for this specific `tasks/get` request.
+  metadata?: Record<string, any> | null;
+}
+Field Name        Type        Required        Description
+id        string        Yes        The ID of the task whose current state is to be retrieved.
+historyLength        integer | null        No        If positive, requests the server to include up to N recent messages in Task.history.
+metadata        Record<string, any> | null        No        Request-specific metadata.
+7.4. tasks/cancel¶
+Requests the cancellation of an ongoing task. The server will attempt to cancel the task, but success is not guaranteed (e.g., the task might have already completed or failed, or cancellation might not be supported at its current stage).
+
+
+Request params type: TaskIdParams
+Response result type (on success): Task (The state of the task after the cancellation attempt. Ideally, Task.status.state will be "canceled" if successful).
+Response error type (on failure): JSONRPCError (e.g., TaskNotFoundError, TaskNotCancelableError).
+7.4.1. TaskIdParams Object (for tasks/cancel and tasks/pushNotification/get)¶
+A simple object containing just the task ID and optional metadata.
+
+
+
+
+interface TaskIdParams {
+  // The ID of the task to which the operation applies (e.g., cancel, get push notification config).
+  id: string;
+  // Arbitrary metadata for this specific request.
+  metadata?: Record<string, any> | null;
+}
+Field Name        Type        Required        Description
+id        string        Yes        The ID of the task.
+metadata        Record<string, any> | null        No        Request-specific metadata.
+7.5. tasks/pushNotification/set¶
+Sets or updates the push notification configuration for a specified task. This allows the client to tell the server where and how to send asynchronous updates for the task. Requires the server to have AgentCard.capabilities.pushNotifications: true.
+
+
+Request params type: TaskPushNotificationConfig
+Response result type (on success): TaskPushNotificationConfig (Confirms the configuration that was set. The server MAY omit or mask any sensitive details like secrets from the authentication.credentials field in the response).
+Response error type (on failure): JSONRPCError (e.g., PushNotificationNotSupportedError, TaskNotFoundError, errors related to invalid PushNotificationConfig).
+7.6. tasks/pushNotification/get¶
+Retrieves the current push notification configuration for a specified task. Requires the server to have AgentCard.capabilities.pushNotifications: true.
+
+
+Request params type: TaskIdParams
+Response result type (on success): TaskPushNotificationConfig (The current push notification configuration for the task. If no configuration is set, pushNotificationConfig field might be null or an empty object. The server MAY omit or mask any sensitive details from the authentication.credentials field).
+Response error type (on failure): JSONRPCError (e.g., PushNotificationNotSupportedError, TaskNotFoundError).
+7.7. tasks/resubscribe¶
+Allows a client to reconnect to an SSE stream for an ongoing task after a previous connection (from tasks/sendSubscribe or an earlier tasks/resubscribe) was interrupted. Requires the server to have AgentCard.capabilities.streaming: true.
+
+
+The purpose is to resume receiving subsequent updates. The server's behavior regarding events missed during the disconnection period (e.g., whether it attempts to backfill some missed events or only sends new ones from the point of resubscription) is implementation-dependent and not strictly defined by this specification.
+
+
+Request params type: TaskQueryParams (The historyLength parameter is typically ignored for resubscription, as the focus is on future events, but it's included for structural consistency).
+Response (on successful resubscription):
+HTTP Status: 200 OK.
+HTTP Content-Type: text/event-stream.
+HTTP Body: A stream of Server-Sent Events, identical in format to tasks/sendSubscribe, carrying subsequent SendTaskStreamingResponse events for the task.
+Response (on resubscription failure):
+Standard HTTP error code (e.g., 4xx, 5xx).
+The HTTP body MAY contain a standard JSONRPCResponse with an error object. Failures can occur if the task is no longer active, doesn't exist, or streaming is not supported/enabled for it.
+8. Error Handling¶
+A2A uses standard JSON-RPC 2.0 error codes and structure for reporting errors. Errors are returned in the error member of the JSONRPCResponse object. See JSONRPCError Object definition.
+
+
+8.1. Standard JSON-RPC Errors¶
+These are standard codes defined by the JSON-RPC 2.0 specification.
+
+
+Code        JSON-RPC Spec Meaning        Typical A2A message        Description
+-32700        Parse error        Invalid JSON payload        Server received JSON that was not well-formed.
+-32600        Invalid Request        Invalid JSON-RPC Request        The JSON payload was valid JSON, but not a valid JSON-RPC Request object.
+-32601        Method not found        Method not found        The requested A2A RPC method (e.g., "tasks/foo") does not exist or is not supported.
+-32602        Invalid params        Invalid method parameters        The params provided for the method are invalid (e.g., wrong type, missing required field).
+-32603        Internal error        Internal server error        An unexpected error occurred on the server during processing.
+-32000 to -32099        Server error        (Server-defined)        Reserved for implementation-defined server-errors. A2A-specific errors use this range.
+8.2. A2A-Specific Errors¶
+These are custom error codes defined within the JSON-RPC server error range (-32000 to -32099) to provide more specific feedback about A2A-related issues. Servers SHOULD use these codes where applicable.
+
+
+Code        Error Name (Conceptual)        Typical message string        Description
+-32001        TaskNotFoundError        Task not found        The specified task id does not correspond to an existing or active task. It might be invalid, expired, or already completed and purged.
+-32002        TaskNotCancelableError        Task cannot be canceled        An attempt was made to cancel a task that is not in a cancelable state (e.g., it has already reached a terminal state like completed, failed, or canceled).
+-32003        PushNotificationNotSupportedError        Push Notification is not supported        Client attempted to use push notification features (e.g., tasks/pushNotification/set) but the server agent does not support them (i.e., AgentCard.capabilities.pushNotifications is false).
+-32004        OperationNotSupportedError        This operation is not supported        The requested operation or a specific aspect of it (perhaps implied by parameters) is not supported by this server agent implementation. Broader than just method not found.
+-32005        ContentTypeNotSupportedError        Incompatible content types        A MIME type provided in the request's message.parts (or implied for an artifact) is not supported by the agent or the specific skill being invoked.
+-32006        StreamingNotSupportedError        Streaming is not supported        Client attempted tasks/sendSubscribe or tasks/resubscribe but the server agent does not support streaming (i.e., AgentCard.capabilities.streaming is false).
+-32007        AuthenticationRequiredError        Authentication required        The request lacks necessary authentication credentials, or the provided credentials are invalid or insufficient. This often accompanies an HTTP 401 Unauthorized status.
+-32008        AuthorizationFailedError        Authorization failed        The authenticated identity is not authorized to perform the requested action or access the specified resource (e.g., a specific task or skill). This often accompanies an HTTP 403 Forbidden status.
+-32009        InvalidTaskStateError        Invalid task state for operation        The operation is not valid for the task's current TaskState (e.g., trying to send a message to a task that is already completed).
+-32010        RateLimitExceededError        Rate limit exceeded        The client has made too many requests in a given amount of time.
+-32011        ResourceUnavailableError        A required resource is unavailable        The server cannot complete the request because a necessary downstream resource or service is temporarily or permanently unavailable.
+Servers MAY define additional error codes within the -32000 to -32099 range for more specific scenarios not covered above, but they SHOULD document these clearly. The data field of the JSONRPCError object can be used to provide more structured details for any error.
+
+
+9. Common Workflows & Examples¶
+This section provides illustrative JSON examples of common A2A interactions. Timestamps, session IDs, and request/response IDs are for demonstration purposes. For brevity, some optional fields might be omitted if not central to the example.
+
+
+9.1. Basic Task Execution (Synchronous / Polling Style)¶
+Scenario: Client asks a simple question, and the agent responds quickly.
+
+
+Client sends a message using tasks/send:
+
+
+{
+  "jsonrpc": "2.0",
+  "id": "req-001",
+  "method": "tasks/send",
+  "params": {
+    "id": "task-abc-123",
+    "sessionId": "session-xyz-789",
+    "message": {
+      "role": "user",
+      "parts": [
+        {
+          "type": "text",
+          "text": "What is the capital of France?"
+        }
+      ]
+    }
+  }
+}
+Server processes the request and responds (task completes quickly):
+
+
+{
+  "jsonrpc": "2.0",
+  "id": "req-001",
+  "result": {
+    "id": "task-abc-123",
+    "sessionId": "session-xyz-789",
+    "status": {
+      "state": "completed",
+      "message": {
+        "role": "agent",
+        "parts": [
+          {
+            "type": "text",
+            "text": "The capital of France is Paris."
+          }
+        ]
+      },
+      "timestamp": "2024-03-15T10:00:05Z"
+    },
+    "artifacts": [
+      {
+        "name": "Answer",
+        "index": 0,
+        "parts": [
+          {
+            "type": "text",
+            "text": "The capital of France is Paris."
+          }
+        ]
+      }
+    ]
+  }
+}
+If the task were longer-running, the server might initially respond with status.state: "working". The client would then periodically call tasks/get with params: {"id": "task-abc-123"} until the task reaches a terminal state.
+
+
+9.2. Streaming Task Execution (SSE)¶
+Scenario: Client asks the agent to write a short story, and the agent streams the story incrementally.
+
+
+Client sends a message and subscribes using tasks/sendSubscribe:
+
+
+{
+  "jsonrpc": "2.0",
+  "id": "req-002",
+  "method": "tasks/sendSubscribe",
+  "params": {
+    "id": "task-story-456",
+    "message": {
+      "role": "user",
+      "parts": [
+        {
+          "type": "text",
+          "text": "Write a very short story about a curious robot exploring Mars."
+        }
+      ]
+    }
+  }
+}
+Server responds with HTTP 200 OK, Content-Type: text/event-stream, and starts sending SSE events:
+Event 1: Task status update - working
+
+
+
+
+id: sse-evt-101
+event: message
+data: {"jsonrpc":"2.0","id":"req-002","result":{"id":"task-story-456","status":{"state":"working","message":{"role":"agent","parts":[{"type":"text","text":"Okay, I'm starting to write that story for you..."}]},"timestamp":"2024-03-15T10:05:01Z"},"final":false}}
+Event 2: Artifact update - first chunk of the story
+
+
+
+
+id: sse-evt-102
+event: message
+data: {"jsonrpc":"2.0","id":"req-002","result":{"id":"task-story-456","artifact":{"name":"MarsStory.txt","index":0,"parts":[{"type":"text","text":"Unit 734, a small rover with oversized optical sensors, trundled across the ochre plains. "}]}}}
+Event 3: Artifact update - second chunk (appended)
+
+
+
+
+id: sse-evt-103
+event: message
+data: {"jsonrpc":"2.0","id":"req-002","result":{"id":"task-story-456","artifact":{"name":"MarsStory.txt","index":0,"append":true,"parts":[{"type":"text","text":"Its mission: to find the source of a peculiar signal. "}]}}}
+Event 4: Artifact update - final chunk
+
+
+
+
+id: sse-evt-104
+event: message
+data: {"jsonrpc":"2.0","id":"req-002","result":{"id":"task-story-456","artifact":{"name":"MarsStory.txt","index":0,"append":true,"lastChunk":true,"parts":[{"type":"text","text":"Olympus Mons loomed, a silent giant, as Unit 734 beeped excitedly."}]}}}
+Event 5: Task status update - completed
+
+
+
+
+id: sse-evt-105
+event: message
+data: {"jsonrpc":"2.0","id":"req-002","result":{"id":"task-story-456","status":{"state":"completed","message":{"role":"agent","parts":[{"type":"text","text":"The story is complete!"}]},"timestamp":"2024-03-15T10:05:05Z"},"final":true}}
+(Server closes the SSE connection after the final:true event). (Note: SSE id and event fields are part of the SSE protocol itself, distinct from the JSON-RPC id within the data payload).
+
+
+9.3. Multi-Turn Interaction (Input Required)¶
+Scenario: Client wants to book a flight, and the agent needs more information.
+
+
+Client tasks/send (initial request):
+
+
+{
+  "jsonrpc": "2.0",
+  "id": "req-003",
+  "method": "tasks/send",
+  "params": {
+    "id": "task-flightbook-789",
+    "message": {
+      "role": "user",
+      "parts": [{ "type": "text", "text": "I'd like to book a flight." }]
+    }
+  }
+}
+Server responds, task state is input-required:
+
+
+{
+  "jsonrpc": "2.0",
+  "id": "req-003",
+  "result": {
+    "id": "task-flightbook-789",
+    "status": {
+      "state": "input-required",
+      "message": {
+        "role": "agent",
+        "parts": [
+          {
+            "type": "text",
+            "text": "Sure, I can help with that! Where would you like to fly to, and from where? Also, what are your preferred travel dates?"
+          }
+        ]
+      },
+      "timestamp": "2024-03-15T10:10:00Z"
+    }
+  }
+}
+Client tasks/send (providing the requested input, using the same task ID):
+
+
+{
+  "jsonrpc": "2.0",
+  "id": "req-004",
+  "method": "tasks/send",
+  "params": {
+    "id": "task-flightbook-789" /* Same task ID */,
+    "message": {
+      "role": "user",
+      "parts": [
+        {
+          "type": "text",
+          "text": "I want to fly from New York (JFK) to London (LHR) around October 10th, returning October 17th."
+        }
+      ]
+    }
+  }
+}
+Server processes the new input and responds (e.g., task completed or more input needed):
+
+
+{
+  "jsonrpc": "2.0",
+  "id": "req-004",
+  "result": {
+    "id": "task-flightbook-789",
+    "status": {
+      "state": "completed",
+      "message": {
+        "role": "agent",
+        "parts": [
+          {
+            "type": "text",
+            "text": "Okay, I've found a flight for you. Confirmation XYZ123. Details are in the artifact."
+          }
+        ]
+      },
+      "timestamp": "2024-03-15T10:11:00Z"
+    },
+    "artifacts": [
+      {
+        "name": "FlightItinerary.json",
+        "parts": [
+          {
+            "type": "data",
+            "data": {
+              "confirmationId": "XYZ123",
+              "from": "JFK",
+              "to": "LHR",
+              "departure": "2024-10-10T18:00:00Z",
+              "arrival": "2024-10-11T06:00:00Z",
+              "returnDeparture": "..."
+            }
+          }
+        ]
+      }
+    ]
+  }
+}
+9.4. Push Notification Setup and Usage¶
+Scenario: Client requests a long-running report generation and wants to be notified via webhook when it's done.
+
+
+Client tasks/send with pushNotification config:
+
+
+{
+  "jsonrpc": "2.0",
+  "id": "req-005",
+  "method": "tasks/send",
+  "params": {
+    "id": "task-reportgen-aaa",
+    "message": {
+      "role": "user",
+      "parts": [
+        {
+          "type": "text",
+          "text": "Generate the Q1 sales report. This usually takes a while. Notify me when it's ready."
+        }
+      ]
+    },
+    "pushNotification": {
+      "url": "https://client.example.com/webhook/a2a-notifications",
+      "token": "secure-client-token-for-task-aaa",
+      "authentication": {
+        "schemes": ["Bearer"]
+        // Assuming server knows how to get a Bearer token for this webhook audience,
+        // or this implies the webhook is public/uses the 'token' for auth.
+        // 'credentials' could provide more specifics if needed by the server.
+      }
+    }
+  }
+}
+Server acknowledges the task (e.g., status submitted or working):
+
+
+{
+  "jsonrpc": "2.0",
+  "id": "req-005",
+  "result": {
+    "id": "task-reportgen-aaa",
+    "status": { "state": "submitted", "timestamp": "2024-03-15T11:00:00Z" }
+    // ... other fields ...
+  }
+}
+(Later) A2A Server completes the task and POSTs a notification to https://client.example.com/webhook/a2a-notifications:
+
+
+HTTP Headers might include:
+
+
+Authorization: Bearer <server_jwt_for_webhook_audience> (if server authenticates to webhook)
+Content-Type: application/json
+X-A2A-Notification-Token: secure-client-token-for-task-aaa
+HTTP Body (example, actual payload is server-defined, but SHOULD include taskId and status):
+
+
+{
+  "eventType": "taskUpdate",
+  "taskId": "task-reportgen-aaa",
+  "status": { "state": "completed", "timestamp": "2024-03-15T18:30:00Z" },
+  "summary": "Q1 sales report generated successfully."
+  // Server MAY include more details or a link to fetch the full task.
+}
+Client's Webhook Service:
+
+
+Receives the POST.
+
+
+Validates the Authorization header (if applicable).
+Validates the X-A2A-Notification-Token.
+Internally processes the notification (e.g., updates application state, notifies end-user).
+
+
+Client (optionally, upon receiving and validating the push notification) calls tasks/get to retrieve full artifacts:
+
+
+
+
+{
+  "jsonrpc": "2.0",
+  "id": "req-006",
+  "method": "tasks/get",
+  "params": { "id": "task-reportgen-aaa" }
+}
+(Server responds with the full Task object, including the generated report in Task.artifacts).
+
+
+9.5. File Exchange (Upload and Download)¶
+Scenario: Client sends an image for analysis, and the agent returns a modified image.
+
+
+Client tasks/send with a FilePart (uploading image bytes):
+
+
+{
+  "jsonrpc": "2.0",
+  "id": "req-007",
+  "method": "tasks/send",
+  "params": {
+    "id": "task-imageanalysis-bbb",
+    "message": {
+      "role": "user",
+      "parts": [
+        {
+          "type": "text",
+          "text": "Analyze this image and highlight any faces."
+        },
+        {
+          "type": "file",
+          "file": {
+            "name": "input_image.png",
+            "mimeType": "image/png",
+            "bytes": "iVBORw0KGgoAAAANSUhEUgAAAAUA..." // Base64 encoded image data
+          }
+        }
+      ]
+    }
+  }
+}
+Server processes the image and responds with a FilePart in an artifact (e.g., providing a URI to the modified image):
+
+
+{
+  "jsonrpc": "2.0",
+  "id": "req-007",
+  "result": {
+    "id": "task-imageanalysis-bbb",
+    "status": { "state": "completed", "timestamp": "2024-03-15T12:05:00Z" },
+    "artifacts": [
+      {
+        "name": "processed_image_with_faces.png",
+        "index": 0,
+        "parts": [
+          {
+            "type": "file",
+            "file": {
+              "name": "output.png",
+              "mimeType": "image/png",
+              // Server might provide a URI to a temporary storage location
+              "uri": "https://storage.example.com/processed/task-bbb/output.png?token=xyz"
+              // Or, alternatively, it could return bytes directly:
+              // "bytes": "ASEDGhw0KGgoAAAANSUhEUgAA..."
+            }
+          }
+        ]
+      }
+    ]
+  }
+}
+9.6. Structured Data Exchange (Requesting and Providing JSON)¶
+Scenario: Client asks for a list of open support tickets in a specific JSON format.
+
+
+Client tasks/send, Part.metadata hints at desired output schema/MIME type: (Note: A2A doesn't formally standardize schema negotiation in v0.1.0, but metadata can be used for such hints by convention between client/server).
+
+
+{
+  "jsonrpc": "2.0",
+  "id": "req-008",
+  "method": "tasks/send",
+  "params": {
+    "id": "task-gettickets-ccc",
+    "message": {
+      "role": "user",
+      "parts": [
+        {
+          "type": "text",
+          "text": "List my open IT support tickets created in the last week.",
+          "metadata": {
+            "desiredOutputMimeType": "application/json",
+            "desiredOutputSchemaRef": "https://schemas.example.com/supportTicketList_v1.json"
+            // This metadata is a convention, not strictly enforced by A2A spec
+          }
+        }
+      ]
+    }
+  }
+}
+Server responds with a DataPart containing the structured JSON data:
+
+
+{
+  "jsonrpc": "2.0",
+  "id": "req-008",
+  "result": {
+    "id": "task-gettickets-ccc",
+    "status": { "state": "completed", "timestamp": "2024-03-15T12:15:00Z" },
+    "artifacts": [
+      {
+        "name": "open_support_tickets.json",
+        "index": 0,
+        "parts": [
+          {
+            "type": "data",
+            "metadata": {
+              "mimeType": "application/json", // Explicitly state MIME type
+              "schemaRef": "https://schemas.example.com/supportTicketList_v1.json" // Confirming schema
+            },
+            "data": [
+              {
+                "ticketId": "IT00123",
+                "summary": "Cannot connect to VPN",
+                "status": "Open",
+                "createdDate": "2024-03-14T09:30:00Z"
+              },
+              {
+                "ticketId": "IT00125",
+                "summary": "Printer not working on 3rd floor",
+                "status": "In Progress",
+                "createdDate": "2024-03-13T15:00:00Z"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
+These examples illustrate the flexibility of A2A in handling various interaction patterns and data types. Implementers should refer to the detailed object definitions for all fields and constraints.
+
+
+10. Appendices¶
+10.1. Relationship to MCP (Model Context Protocol)¶
+A2A and MCP are complementary protocols designed for different aspects of agentic systems:
+
+
+Model Context Protocol (MCP): Focuses on standardizing how AI models and agents connect to and interact with tools, APIs, data sources, and other external resources. It defines structured ways to describe tool capabilities (like function calling in LLMs), pass inputs, and receive structured outputs. Think of MCP as the "how-to" for an agent to use a specific capability or access a resource.
+Agent2Agent Protocol (A2A): Focuses on standardizing how independent, often opaque, AI agents communicate and collaborate with each other as peers. A2A provides an application-level protocol for agents to discover each other, negotiate interaction modalities, manage shared tasks, and exchange conversational context or complex results. It's about how agents partner or delegate work.
+How they work together: An A2A Client agent might request an A2A Server agent to perform a complex task. The Server agent, in turn, might use MCP to interact with several underlying tools, APIs, or data sources to gather information or perform actions necessary to fulfill the A2A task.
+
+
+For a more detailed comparison, see the A2A and MCP guide.
+
+
+10.2. Security Considerations Summary¶
+Security is a paramount concern in A2A. Key considerations include:
+
+
+Transport Security: Always use HTTPS with strong TLS configurations in production environments.
+Authentication:
+Handled via standard HTTP mechanisms (e.g., Authorization header with Bearer tokens, API keys).
+Requirements are declared in the AgentCard.
+Credentials MUST be obtained out-of-band by the client.
+A2A Servers MUST authenticate every request.
+Authorization:
+A server-side responsibility based on the authenticated identity.
+Implement the principle of least privilege.
+Can be granular, based on skills, actions, or data.
+Push Notification Security:
+Webhook URL validation (by the A2A Server sending notifications) is crucial to prevent SSRF.
+Authentication of the A2A Server to the client's webhook is essential.
+Authentication of the notification by the client's webhook receiver (verifying it came from the legitimate A2A Server and is relevant) is critical.
+See the Streaming & Asynchronous Operations guide for detailed push notification security.
+Input Validation: Servers MUST rigorously validate all RPC parameters and the content/structure of data in Message and Artifact parts to prevent injection attacks or processing errors.
+Resource Management: Implement rate limiting, concurrency controls, and resource limits to protect agents from abuse or overload.
+Data Privacy: Adhere to all applicable privacy regulations for data exchanged in Message and Artifact parts. Minimize sensitive data transfer.
+
+
+
+
+ython Quickstart Tutorial: Building an A2A Agent¶
+Welcome to the Agent2Agent (A2A) Python Quickstart Tutorial!
+
+
+In this tutorial, you will explore a simple "echo" A2A server using the Python SDK. This will introduce you to the fundamental concepts and components of an A2A server. You will then look at a more advanced example that integrates a Large Language Model (LLM).
+
+
+This hands-on guide will help you understand:
+
+
+The basic concepts behind the A2A protocol.
+How to set up a Python environment for A2A development using the SDK.
+How Agent Skills and Agent Cards describe an agent.
+How an A2A server handles tasks.
+How to interact with an A2A server using a client.
+How streaming capabilities and multi-turn interactions work.
+How an LLM can be integrated into an A2A agent.
+By the end of this tutorial, you will have a functional understanding of A2A agents and a solid foundation for building or integrating A2A-compliant applications.
+
+
+2. Setup Your Environment¶
+Prerequisites¶
+Python 3.10 or higher.
+Access to a terminal or command prompt.
+Git, for cloning the repository.
+A code editor (e.g., VS Code) is recommended.
+Clone the Repository¶
+If you haven't already, clone the A2A repository and navigate to the Python SDK directory:
+
+
+
+
+git clone https://github.com/google/a2a-python.git -b main --depth 1
+cd a2a-python
+Python Environment & SDK Installation¶
+We recommend using a virtual environment for Python projects. The A2A Python SDK uses uv for dependency management, but you can use pip with venv as well.
+
+
+Create and activate a virtual environment:
+
+
+Using venv (standard library):
+
+
+
+
+Mac/Linux
+Windows
+
+
+python -m venv .venv
+source .venv/bin/activate
+
+
+Install the A2A SDK and its dependencies:
+
+
+The a2a-python repository contains the SDK source code. To make it and its dependencies available in your environment, run:
+
+
+
+
+pip install -e '.[dev]'
+This command installs the SDK in "editable" mode (-e), meaning changes to the SDK source code are immediately available. It also installs development dependencies specified in pyproject.toml.
+
+
+Verify Installation¶
+After installation, you should be able to import the a2a package in a Python interpreter:
+
+
+
+
+python -c "import a2a; print('A2A SDK imported successfully')"
+If this command runs without error and prints the success message, your environment is set up correctly.
+
+
+3. Agent Skills & Agent Card¶
+Before an A2A agent can do anything, it needs to define what it can do (its skills) and how other agents or clients can find out about these capabilities (its Agent Card).
+
+
+We'll use the helloworld example located in a2a-python/examples/helloworld/.
+
+
+Agent Skills¶
+An Agent Skill describes a specific capability or function the agent can perform. It's a building block that tells clients what kinds of tasks the agent is good for.
+
+
+Key attributes of an AgentSkill (defined in a2a.types):
+
+
+id: A unique identifier for the skill.
+name: A human-readable name.
+description: A more detailed explanation of what the skill does.
+tags: Keywords for categorization and discovery.
+examples: Sample prompts or use cases.
+inputModes / outputModes: Supported MIME types for input and output (e.g., "text/plain", "application/json").
+In examples/helloworld/__main__.py, you can see how a skill for the Helloworld agent is defined:
+
+
+# examples/helloworld/__main__.py
+# ...
+    skill = AgentSkill(
+        id='hello_world',
+        name='Returns hello world',
+        description='just returns hello world',
+        tags=['hello world'],
+        examples=['hi', 'hello world'],
+    )
+# ...
+This skill is very simple: it's named "Returns hello world" and primarily deals with text.
+
+
+Agent Card¶
+The Agent Card is a JSON document that an A2A Server makes available, typically at a .well-known/agent.json endpoint. It's like a digital business card for the agent.
+
+
+Key attributes of an AgentCard (defined in a2a.types):
+
+
+name, description, version: Basic identity information.
+url: The endpoint where the A2A service can be reached.
+capabilities: Specifies supported A2A features like streaming or pushNotifications.
+authentication: Details on how clients should authenticate.
+defaultInputModes / defaultOutputModes: Default MIME types for the agent.
+skills: A list of AgentSkill objects that the agent offers.
+The helloworld example defines its Agent Card like this:
+
+
+# examples/helloworld/__main__.py
+# ...
+    agent_card = AgentCard(
+        name='Hello World Agent',
+        description='Just a hello world agent',
+        url='http://localhost:9999/', # Agent will run here
+        version='1.0.0',
+        defaultInputModes=['text'],
+        defaultOutputModes=['text'],
+        capabilities=AgentCapabilities(), # Basic capabilities
+        skills=[skill], # Includes the skill defined above
+        authentication=AgentAuthentication(schemes=['public']), # No auth needed
+    )
+# ...
+This card tells us the agent is named "Hello World Agent", runs at http://localhost:9999/, supports text interactions, and has the hello_world skill. It also indicates public authentication, meaning no specific credentials are required.
+
+
+Understanding the Agent Card is crucial because it's how a client discovers an agent and learns how to interact with it.
+
+
+4. The Agent Executor¶
+The core logic of how an A2A agent processes requests and generates responses/events is handled by an Agent Executor. The A2A Python SDK provides an abstract base class a2a.server.agent_execution.AgentExecutor that you implement.
+
+
+AgentExecutor Interface¶
+The AgentExecutor class defines two primary methods:
+
+
+async def execute(self, context: RequestContext, event_queue: EventQueue): Handles incoming requests that expect a response or a stream of events. It processes the user's input (available via context) and uses the event_queue to send back Message, Task, TaskStatusUpdateEvent, or TaskArtifactUpdateEvent objects.
+async def cancel(self, context: RequestContext, event_queue: EventQueue): Handles requests to cancel an ongoing task.
+The RequestContext provides information about the incoming request, such as the user's message and any existing task details. The EventQueue is used by the executor to send events back to the client.
+
+
+Helloworld Agent Executor¶
+Let's look at examples/helloworld/agent_executor.py. It defines HelloWorldAgentExecutor.
+
+
+The Agent (HelloWorldAgent): This is a simple helper class that encapsulates the actual "business logic".
+
+
+# examples/helloworld/agent_executor.py
+class HelloWorldAgent:
+    """Hello World Agent."""
+
+
+    async def invoke(self) -> str:
+        return 'Hello World'
+It has a simple invoke method that returns the string "Hello World".
+
+
+The Executor (HelloWorldAgentExecutor): This class implements the AgentExecutor interface.
+
+
+__init__:
+
+
+# examples/helloworld/agent_executor.py
+from typing_extensions import override
+
+
+from a2a.server.agent_execution import AgentExecutor, RequestContext
+from a2a.server.events import EventQueue
+from a2a.utils import new_agent_text_message
+
+
+
+
+class HelloWorldAgentExecutor(AgentExecutor):
+    """Test AgentProxy Implementation."""
+
+
+    def __init__(self):
+        self.agent = HelloWorldAgent()
+It instantiates the HelloWorldAgent.
+
+
+execute:
+
+
+# examples/helloworld/agent_executor.py
+    @override
+    async def execute(
+        self,
+        context: RequestContext,
+        event_queue: EventQueue,
+    ) -> None:
+        result = await self.agent.invoke()
+        event_queue.enqueue_event(new_agent_text_message(result))
+When a message/send or message/stream request comes in (both are handled by execute in this simplified executor):
+
+
+It calls self.agent.invoke() to get the "Hello World" string.
+It creates an A2A Message object using the new_agent_text_message utility function.
+It enqueues this message onto the event_queue. The underlying DefaultRequestHandler will then process this queue to send the response(s) to the client. For a single message like this, it will result in a single response for message/send or a single event for message/stream before the stream closes.
+cancel: The Helloworld example's cancel method simply raises an exception, indicating that cancellation is not supported for this basic agent.
+
+
+# examples/helloworld/agent_executor.py
+    @override
+    async def cancel(
+        self, context: RequestContext, event_queue: EventQueue
+    ) -> None:
+        raise Exception('cancel not supported')
+The AgentExecutor acts as the bridge between the A2A protocol (managed by the request handler and server application) and your agent's specific logic. It receives context about the request and uses an event queue to communicate results or updates back.
+
+
+5. Starting the Server¶
+Now that we have an Agent Card and an Agent Executor, we can set up and start the A2A server.
+
+
+The A2A Python SDK provides an A2AStarletteApplication class that simplifies running an A2A-compliant HTTP server. It uses Starlette for the web framework and is typically run with an ASGI server like Uvicorn.
+
+
+Server Setup in Helloworld¶
+Let's look at examples/helloworld/__main__.py again to see how the server is initialized and started.
+
+
+# examples/helloworld/__main__.py
+from agent_executor import HelloWorldAgentExecutor
+
+
+from a2a.server.apps import A2AStarletteApplication
+from a2a.server.request_handlers import DefaultRequestHandler
+from a2a.server.tasks import InMemoryTaskStore # For task state management
+from a2a.types import (
+    # ... other imports ...
+    AgentCard,
+    AgentSkill,
+    AgentCapabilities,
+    AgentAuthentication,
+    # ...
+)
+import uvicorn
+
+
+if __name__ == '__main__':
+    # ... AgentSkill and AgentCard definition from previous steps ...
+    skill = AgentSkill(
+        id='hello_world',
+        name='Returns hello world',
+        description='just returns hello world',
+        tags=['hello world'],
+        examples=['hi', 'hello world'],
+    )
+
+
+    agent_card = AgentCard(
+        name='Hello World Agent',
+        description='Just a hello world agent',
+        url='http://localhost:9999/',
+        version='1.0.0',
+        defaultInputModes=['text'],
+        defaultOutputModes=['text'],
+        capabilities=AgentCapabilities(),
+        skills=[skill],
+        authentication=AgentAuthentication(schemes=['public']),
+    )
+
+
+    # 1. Request Handler
+    request_handler = DefaultRequestHandler(
+        agent_executor=HelloWorldAgentExecutor(),
+        task_store=InMemoryTaskStore(), # Provide a task store
+    )
+
+
+    # 2. A2A Starlette Application
+    server_app_builder = A2AStarletteApplication(
+        agent_card=agent_card, http_handler=request_handler
+    )
+
+
+    # 3. Start Server using Uvicorn
+    uvicorn.run(server_app_builder.build(), host='0.0.0.0', port=9999)
+Let's break this down:
+
+
+DefaultRequestHandler:
+
+
+The SDK provides DefaultRequestHandler. This handler takes your AgentExecutor implementation (here, HelloWorldAgentExecutor) and a TaskStore (here, InMemoryTaskStore).
+It routes incoming A2A RPC calls to the appropriate methods on your executor (like execute or cancel).
+The TaskStore is used by the DefaultRequestHandler to manage the lifecycle of tasks, especially for stateful interactions, streaming, and resubscription. Even if your agent executor is simple, the handler needs a task store.
+A2AStarletteApplication:
+
+
+The A2AStarletteApplication class is instantiated with the agent_card and the request_handler (referred to as http_handler in its constructor).
+The agent_card is crucial because the server will expose it at the /.well-known/agent.json endpoint (by default).
+The request_handler is responsible for processing all incoming A2A method calls by interacting with your AgentExecutor.
+uvicorn.run(server_app_builder.build(), ...):
+
+
+The A2AStarletteApplication has a build() method that constructs the actual Starlette application.
+This application is then run using uvicorn.run(), making your agent accessible over HTTP.
+host='0.0.0.0' makes the server accessible on all network interfaces on your machine.
+port=9999 specifies the port to listen on. This matches the url in the AgentCard.
+Running the Helloworld Server¶
+Navigate to the a2a-python directory in your terminal (if you're not already there) and ensure your virtual environment is activated.
+
+
+To run the Helloworld server:
+
+
+
+
+# from the a2a-python directory
+python examples/helloworld/__main__.py
+You should see output similar to this, indicating the server is running:
+
+
+INFO:     Started server process [xxxxx]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:9999 (Press CTRL+C to quit)
+Your A2A Helloworld agent is now live and listening for requests! In the next step, we'll interact with it.
+
+
+6. Interacting with the Server¶
+With the Helloworld A2A server running, let's send some requests to it. The SDK includes a client (A2AClient) that simplifies these interactions.
+
+
+The Helloworld Test Client¶
+The examples/helloworld/test_client.py script demonstrates how to:
+
+
+Fetch the Agent Card from the server.
+Create an A2AClient instance.
+Send both non-streaming (message/send) and streaming (message/stream) requests.
+Open a new terminal window, activate your virtual environment, and navigate to the a2a-python directory.
+
+
+Activate virtual environment (Be sure to do this in the same directory where you created the virtual environment):
+
+
+
+
+Mac/Linux
+Windows
+
+
+source .venv/bin/activate
+
+
+Run the test client:
+
+
+
+
+# from the a2a-python directory
+python examples/helloworld/test_client.py
+Understanding the Client Code¶
+Let's look at key parts of examples/helloworld/test_client.py:
+
+
+Fetching the Agent Card & Initializing the Client:
+
+
+# examples/helloworld/test_client.py
+async with httpx.AsyncClient() as httpx_client:
+    client = await A2AClient.get_client_from_agent_card_url(
+        httpx_client, 'http://localhost:9999'
+    )
+The A2AClient.get_client_from_agent_card_url class method is a convenience. It first fetches the AgentCard from the server's /.well-known/agent.json endpoint (based on the provided base URL) and then initializes the client with it.
+
+
+Sending a Non-Streaming Message (send_message):
+
+
+# examples/helloworld/test_client.py
+from a2a.types import (
+    MessageSendParams,
+    SendMessageRequest,
+    SendStreamingMessageRequest,
+)
+# ...
+send_message_payload: dict[str, Any] = {
+    'message': {
+        'role': 'user',
+        'parts': [{'type': 'text', 'text': 'how much is 10 USD in INR?'}], # Content doesn't matter for Helloworld
+        'messageId': uuid4().hex,
+    },
+}
+request = SendMessageRequest(
+    params=MessageSendParams(**send_message_payload)
+)
+
+
+response = await client.send_message(request)
+print(response.model_dump(mode='json', exclude_none=True))
+The send_message_payload constructs the data for MessageSendParams.
+This is wrapped in a SendMessageRequest.
+It includes a message object with the role set to "user" and the content in parts.
+The Helloworld agent's execute method will enqueue a single "Hello World" message. The DefaultRequestHandler will retrieve this and send it as the response.
+The response will be a SendMessageResponse object, which contains either a SendMessageSuccessResponse (with the agent's Message as the result) or a JSONRPCErrorResponse.
+Handling Task IDs (Illustrative Note for Helloworld): The Helloworld client (examples/helloworld/test_client.py) doesn't attempt get_task or cancel_task directly because the simple Helloworld agent's execute method, when called via message/send, results in the DefaultRequestHandler returning a direct Message response rather than a Task object. More complex agents that explicitly manage tasks (like the LangGraph example) would return a Task object from message/send, and its id could then be used for get_task or cancel_task.
+
+
+Sending a Streaming Message (send_message_streaming):
+
+
+# examples/helloworld/test_client.py
+streaming_request = SendStreamingMessageRequest(
+    params=MessageSendParams(**send_message_payload) # Same payload can be used
+)
+
+
+stream_response = client.send_message_streaming(streaming_request)
+async for chunk in stream_response:
+    print(chunk.model_dump(mode='json', exclude_none=True))
+This method calls the agent's message/stream endpoint. The DefaultRequestHandler will invoke the HelloWorldAgentExecutor.execute method.
+The execute method enqueues one "Hello World" message, and then the event queue is closed.
+The client will receive this single message as one SendStreamingMessageResponse event, and then the stream will terminate.
+The stream_response is an AsyncGenerator.
+Expected Output¶
+When you run test_client.py, you'll see JSON outputs for:
+
+
+The non-streaming response (a single "Hello World" message).
+The streaming response (a single "Hello World" message as one chunk, after which the stream ends).
+The id fields in the output will vary with each run.
+
+
+// Non-streaming response
+{"jsonrpc":"2.0","id":"xxxxxxxx","result":{"type":"message","role":"agent","parts":[{"type":"text","text":"Hello World"}],"messageId":"yyyyyyyy"}}
+// Streaming response (one chunk)
+{"jsonrpc":"2.0","id":"zzzzzzzz","result":{"type":"message","role":"agent","parts":[{"type":"text","text":"Hello World"}],"messageId":"wwwwwwww","final":true}}
+(Actual IDs like xxxxxxxx, yyyyyyyy, zzzzzzzz, wwwwwwww will be different UUIDs/request IDs)
+
+
+This confirms your server is correctly handling basic A2A interactions with the updated SDK structure!
+
+
+Now you can shut down the server by typing Ctrl+C in the terminal window where __main__.py is running.
+
+
+7. Streaming & Multi-Turn Interactions (LangGraph Example)¶
+The Helloworld example demonstrates the basic mechanics of A2A. For more advanced features like robust streaming, task state management, and multi-turn conversations powered by an LLM, we'll turn to the langgraph example located in a2a-python/examples/langgraph/.
+
+
+This example features a "Currency Agent" that uses the Gemini model via LangChain and LangGraph to answer currency conversion questions.
+
+
+Setting up the LangGraph Example¶
+Create a Gemini API Key, if you don't already have one.
+
+
+Environment Variable:
+
+
+Create a .env file in the a2a-python/examples/langgraph/ directory:
+
+
+
+
+# In a2a-python/examples/langgraph/
+echo "GOOGLE_API_KEY=YOUR_API_KEY_HERE" > .env
+Replace YOUR_API_KEY_HERE with your actual Gemini API key.
+
+
+Install Dependencies (if not already covered): The langgraph example has its own pyproject.toml which includes dependencies like langchain-google-genai and langgraph. When you installed the SDK from the a2a-python root using pip install -e .[dev], this should have also installed the dependencies for the workspace examples, including langgraph-example. If you encounter import errors, ensure your primary SDK installation from the root directory was successful.
+
+
+Running the LangGraph Server¶
+Navigate to the a2a-python/examples/langgraph/ directory in your terminal and ensure your virtual environment (from the SDK root) is activated.
+
+
+Start the LangGraph agent server:
+
+
+
+
+# From a2a-python/examples/langgraph/
+python __main__.py
+This will start the server, usually on http://localhost:10000.
+
+
+Interacting with the LangGraph Agent¶
+Open a new terminal window, activate your virtual environment, and navigate to a2a-python/examples/langgraph/.
+
+
+Run its test client:
+
+
+
+
+# From a2a-python/examples/langgraph/
+python test_client.py
+Now, you can shut down the server by typing Ctrl+C in the terminal window where __main__.py is running.
+
+
+Key Features Demonstrated¶
+The langgraph example showcases several important A2A concepts:
+
+
+LLM Integration:
+
+
+examples/langgraph/agent.py defines CurrencyAgent. It uses ChatGoogleGenerativeAI and LangGraph's create_react_agent to process user queries.
+This demonstrates how a real LLM can power the agent's logic.
+Task State Management:
+
+
+examples/langgraph/__main__.py initializes a DefaultRequestHandler with an InMemoryTaskStore.
+# examples/langgraph/__main__.py
+request_handler = DefaultRequestHandler(
+    agent_executor=CurrencyAgentExecutor(),
+    task_store=InMemoryTaskStore(),
+)
+The CurrencyAgentExecutor (in examples/langgraph/agent_executor.py), when its execute method is called by the DefaultRequestHandler, interacts with the RequestContext which contains the current task (if any).
+For message/send, the DefaultRequestHandler uses the TaskStore to persist and retrieve task state across interactions. The response to message/send will be a full Task object if the agent's execution flow involves multiple steps or results in a persistent task.
+The test_client.py's run_single_turn_test demonstrates getting a Task object back and then querying it using get_task.
+Streaming with TaskStatusUpdateEvent and TaskArtifactUpdateEvent:
+
+
+The execute method in CurrencyAgentExecutor is responsible for handling both non-streaming and streaming requests, orchestrated by the DefaultRequestHandler.
+As the LangGraph agent processes the request (which might involve calling tools like get_exchange_rate), the CurrencyAgentExecutor enqueues different types of events onto the EventQueue:
+TaskStatusUpdateEvent: For intermediate updates (e.g., "Looking up exchange rates...", "Processing the exchange rates.."). The final flag on these events is False.
+TaskArtifactUpdateEvent: When the final answer is ready, it's enqueued as an artifact. The lastChunk flag is True.
+A final TaskStatusUpdateEvent with state=TaskState.completed and final=True is sent to signify the end of the task for streaming.
+The test_client.py's run_streaming_test function will print these individual event chunks as they are received from the server.
+Multi-Turn Conversation (TaskState.input_required):
+
+
+The CurrencyAgent can ask for clarification if a query is ambiguous (e.g., user asks "how much is 100 USD?").
+When this happens, the CurrencyAgentExecutor will enqueue a TaskStatusUpdateEvent where status.state is TaskState.input_required and status.message contains the agent's question (e.g., "To which currency would you like to convert?"). This event will have final=True for the current interaction stream.
+The test_client.py's run_multi_turn_test function demonstrates this:
+It sends an initial ambiguous query.
+The agent responds (via the DefaultRequestHandler processing the enqueued events) with a Task whose status is input_required.
+The client then sends a second message, including the taskId and contextId from the first turn's Task response, to provide the missing information ("in GBP"). This continues the same task.
+Exploring the Code¶
+Take some time to look through these files in examples/langgraph/:
+
+
+__main__.py: Server setup using A2AStarletteApplication and DefaultRequestHandler. Note the AgentCard definition includes capabilities.streaming=True.
+agent.py: The CurrencyAgent with LangGraph, LLM model, and tool definitions.
+agent_executor.py: The CurrencyAgentExecutor implementing the execute (and cancel) method. It uses the RequestContext to understand the ongoing task and the EventQueue to send back various events (TaskStatusUpdateEvent, TaskArtifactUpdateEvent, new Task object implicitly via the first event if no task exists).
+test_client.py: Demonstrates various interaction patterns, including retrieving task IDs and using them for multi-turn conversations.
+This example provides a much richer illustration of how A2A facilitates complex, stateful, and asynchronous interactions between agents.

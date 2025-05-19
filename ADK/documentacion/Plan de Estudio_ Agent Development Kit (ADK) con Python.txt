@@ -1,0 +1,185 @@
+﻿Plan de Estudio: Agent Development Kit (ADK) con Python
+Participante: Médico, estudiante autodidacta de Python.
+Tutor: Gemini (IA)
+Fecha de Inicio: 19 de mayo de 2025
+Objetivo General: Comprender los conceptos fundamentales del Agent Development Kit (ADK), su arquitectura, componentes principales y cómo desarrollar agentes de IA básicos utilizando Python y el ADK. El plan se orientará a una práctica que permita entender su funcionamiento.
+Módulo 1: Introducción y Fundamentos del ADK
+(Contenido de Puntos 1-5 ya documentado)
+Punto 6: Ampliando Capacidades - Añadiendo una Nueva Herramienta al Agente
+(Contenido del Punto 6 ya documentado, incluyendo la herramienta simple_calculator)
+Punto 7 (Revisado): Introducción al Despliegue Local de Agentes con FastAPI
+Objetivo:
+* Entender la utilidad de exponer un agente como API.
+* Introducción a FastAPI y Uvicorn.
+* Crear un script de FastAPI para interactuar con el agente ADK.
+* Ejecutar y probar la API del agente.
+1. ¿Por Qué Exponer tu Agente como una API?
+* Accesibilidad: Permite que otros programas interactúen con el agente.
+* Separación de Lógica: Mantiene la lógica del agente separada de su interfaz.
+* Escalabilidad y Despliegue: Base para despliegues más robustos.
+* Integración: Facilita la integración en sistemas más grandes.
+2. Introducción a FastAPI:
+* Framework web moderno para construir APIs con Python.
+* Rápido, fácil de usar, con documentación automática.
+* Usa Uvicorn como servidor ASGI.
+* Define rutas (endpoints) y operaciones de ruta (funciones Python).
+* Utiliza Pydantic para validación de datos y modelos.
+* Soporta async/await de forma nativa.
+3. Instalación de FastAPI y Uvicorn:
+Con el entorno virtual activado:
+pip install "fastapi[all]"
+
+4. Creación del Script api_server.py:
+Se creó el archivo api_server.py con el siguiente contenido:
+# api_server.py
+
+import asyncio
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+import uvicorn
+from dotenv import load_dotenv
+
+import agent as adk_agent
+from google.adk.runners import InMemoryRunner
+from google.adk.sessions import Session as ADKSession
+from google.genai.types import Content, Part
+
+# Cargar variables de entorno del .env al inicio del script
+load_dotenv(override=True)
+
+class ChatRequest(BaseModel):
+   session_id: str | None = None
+   message: str
+
+class ChatResponse(BaseModel):
+   session_id: str
+   agent_reply: str
+   tool_calls: list[str] | None = None
+
+class SessionResponse(BaseModel):
+   session_id: str
+   message: str
+
+app = FastAPI(title="Mi Agente ADK con FastAPI", version="0.1.0")
+
+adk_runner_instance = InMemoryRunner(
+   agent=adk_agent.root_agent,
+   app_name="mi_agente_fastapi"
+)
+adk_session_service = adk_runner_instance.session_service
+active_sessions: dict[str, ADKSession] = {}
+
+@app.post("/create_session", response_model=SessionResponse, tags=["Session Management"])
+async def create_adk_session(user_id: str = "default_user"):
+   try:
+       print(f"API: Solicitud para crear sesión para el usuario: {user_id}")
+       new_session = adk_session_service.create_session(
+           app_name=adk_runner_instance.app_name, user_id=user_id
+       )
+       active_sessions[new_session.id] = new_session
+       print(f"API: Sesión creada con ID: {new_session.id}")
+       return SessionResponse(session_id=new_session.id, message="Sesión creada exitosamente.")
+   except Exception as e:
+       print(f"API Error creando sesión: {e}")
+       raise HTTPException(status_code=500, detail=f"Error interno del servidor al crear sesión: {str(e)}")
+
+@app.post("/chat", response_model=ChatResponse, tags=["Agent Interaction"])
+async def chat_with_agent(request: ChatRequest):
+   session_id = request.session_id
+   adk_session_obj: ADKSession | None = None
+
+   if session_id and session_id in active_sessions:
+       adk_session_obj = active_sessions[session_id]
+       print(f"API: Usando sesión existente: {session_id} para mensaje: '{request.message}'")
+   elif session_id:
+       print(f"API: ID de sesión '{session_id}' provisto pero no encontrado. Creando una nueva.")
+       try:
+           adk_session_obj = adk_session_service.create_session(app_name=adk_runner_instance.app_name, user_id="default_user_chat")
+           active_sessions[adk_session_obj.id] = adk_session_obj
+           session_id = adk_session_obj.id
+           print(f"API: Nueva sesión creada para chat: {session_id}")
+       except Exception as e:
+           print(f"API Error creando sesión para chat: {e}")
+           raise HTTPException(status_code=500, detail="Error creando sesión para chat.")
+   else:
+       try:
+           print(f"API: No se proveyó ID de sesión. Creando una nueva para mensaje: '{request.message}'")
+           adk_session_obj = adk_session_service.create_session(app_name=adk_runner_instance.app_name, user_id="default_user_chat")
+           active_sessions[adk_session_obj.id] = adk_session_obj
+           session_id = adk_session_obj.id
+           print(f"API: Nueva sesión creada para chat: {session_id}")
+       except Exception as e:
+           print(f"API Error creando sesión para chat: {e}")
+           raise HTTPException(status_code=500, detail="Error creando sesión para chat.")
+
+   if not adk_session_obj or not session_id:
+       raise HTTPException(status_code=500, detail="No se pudo obtener o crear una sesión válida.")
+
+   user_content = Content(role='user', parts=[Part.from_text(text=request.message)])
+   agent_reply_text = ""
+   tool_calls_details = []
+
+   try:
+       print(f"API: Enviando al runner para sesión {session_id}: '{request.message}'")
+       async for event in adk_runner_instance.run_async(
+           user_id=adk_session_obj.user_id,
+           session_id=session_id,
+           new_message=user_content,
+       ):
+           if event.content and event.content.parts:
+               for part in event.content.parts:
+                   if part.text:
+                       agent_reply_text += part.text
+                   if part.function_call:
+                       tool_calls_details.append(f"Llamada a herramienta: {part.function_call.name}({part.function_call.args})")
+                       print(f"API DEBUG: Agente llamó a herramienta -> {part.function_call.name}({part.function_call.args})")
+       
+       print(f"API: Respuesta del agente para sesión {session_id}: '{agent_reply_text}'")
+       return ChatResponse(
+           session_id=session_id, 
+           agent_reply=agent_reply_text.strip(),
+           tool_calls=tool_calls_details if tool_calls_details else None
+       )
+   except Exception as e:
+       print(f"API Error durante la ejecución del agente: {e}")
+       raise HTTPException(status_code=500, detail=f"Error interno del servidor durante la ejecución del agente: {str(e)}")
+
+@app.get("/", tags=["General"])
+async def read_root():
+   return {"message": "Servidor del Agente ADK está funcionando!"}
+
+if __name__ == "__main__":
+   print("Iniciando servidor FastAPI con Uvicorn...")
+   uvicorn.run(
+       "api_server:app",
+       host="127.0.0.1",
+       port=8000,
+       reload=True
+   )
+
+5. Ejecución y Prueba del Servidor FastAPI:
+* El servidor se ejecutó con python api_server.py.
+* Se verificó el endpoint raíz (/) y la documentación automática (/docs).
+* Se creó una sesión usando el endpoint /create_session.
+* Se envió un mensaje al endpoint /chat usando curl con un JSON corregido:
+curl -X 'POST' \
+ 'http://127.0.0.1:8000/chat' \
+ -H 'accept: application/json' \
+ -H 'Content-Type: application/json' \
+ -d '{
+ "session_id": "ID_DE_SESION_OBTENIDO", 
+ "message": "Hola, ¿cuánto es 5 más 3?"
+}'
+
+* Respuesta Exitosa Obtenida:
+{
+ "session_id": "ID_DE_SESION_OBTENIDO",
+ "agent_reply": "El resultado de 5 más 3 es 8.",
+ "tool_calls": [
+   "Llamada a herramienta: simple_calculator({'num1': 5, 'num2': 3, 'operation': 'add'})"
+ ]
+}
+
+Esto confirmó que la API funciona, el agente procesa la solicitud, usa la herramienta simple_calculator, y la API devuelve la respuesta del agente y la información de la llamada a la herramienta.
+Conclusión del Punto 7 (Revisado):
+Se ha desplegado exitosamente el agente ADK como una API local utilizando FastAPI. Esto permite la interacción con el agente a través de solicitudes HTTP, abriendo la puerta a la integración con otras aplicaciones o servicios. Se cubrieron los conceptos básicos de FastAPI, la creación de endpoints, el manejo de solicitudes/respuestas con Pydantic y la ejecución del servidor con Uvicorn.
